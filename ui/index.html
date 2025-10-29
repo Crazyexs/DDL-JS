@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>DAEDALUS #1043 — Ground Station</title>
+  <link rel="stylesheet" href="styles.css"/>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net"/>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1/dist/leaflet.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1/dist/leaflet.js"></script>
+</head>
+<body>
+  <!-- HEADER -->
+  <header class="topbar">
+    <div class="brandwrap">
+      <img src="assets/daedalus.png" class="logo" alt="DAEDALUS"/>
+      <div>
+        <div class="brand">DAEDALUS <span class="tag">#1043</span></div>
+        <div class="sub">Portable CanSat Ground Station</div>
+      </div>
+    </div>
+
+    <!-- Top clocks (หนึ่งชุดเท่านั้น: ไม่มี ID ซ้ำ) -->
+    <div class="top-clocks">
+      <div id="utcClock" class="clock-badge">UTC: 00:00:00</div>
+      <div id="missionTime" class="clock-badge mission">Mission: 00:00:00</div>
+      <div id="connPill" class="pill">Disconnected</div>
+    </div>
+  </header>
+
+  <!-- CONTROL STRIP -->
+  <section class="strip">
+    <div class="group">
+      <div class="label">Connection</div>
+      <label class="radio"><input type="radio" name="mode" id="modeBrowser" checked> Browser</label>
+      <label class="radio"><input type="radio" name="mode" id="modeServer"> Server</label>
+      <button id="btnConnectBrowser" class="btn primary">Connect</button>
+      <button id="btnDisconnectBrowser" class="btn ghost">Disconnect</button>
+    </div>
+
+    <div class="group" id="serverSerialPanel" style="display:none">
+      <div class="label">Server Serial</div>
+      <select id="portSel" class="sel"></select>
+      <select id="baudSel" class="sel"></select>
+      <button id="applyPort" class="btn primary">Apply</button>
+      <button id="refreshPorts" class="btn ghost">Refresh</button>
+    </div>
+
+    <!-- Health KV -->
+    <div class="group grow" id="healthKV">
+      <!-- app.js จะเติมค่าให้ 5 ช่องนี้ -->
+      <div class="kv item"><div class="k">Port</div><div class="v big" id="kvPort">—</div></div>
+      <div class="kv item"><div class="k">Baud</div><div class="v big" id="kvBaud">—</div></div>
+      <div class="kv item"><div class="k">RX</div><div class="v big ok" id="kvRx">0</div></div>
+      <div class="kv item"><div class="k">Lost</div><div class="v big" id="kvLost">0</div></div>
+      <div class="kv item wide"><div class="k">CSV</div><div class="v" id="kvCsv">data\Flight_1043.csv</div></div>
+    </div>
+  </section>
+
+  <!-- SINGLE-SCREEN -->
+  <main class="screen">
+    <!-- LEFT -->
+    <div class="col left">
+      <!-- CONTAINER -->
+      <section class="panel h42">
+        <div class="panel-title">
+          <div>CONTAINER — <span id="containerState">STATE: —</span></div>
+          <div class="chips">
+            <span class="chip ok">Healthy: <b id="contHealthy">0</b></span>
+            <span class="chip warn">Corrupted: <b id="contBad">0</b></span>
+            <span class="chip batt"><span id="contBattPct">—</span>%</span>
+          </div>
+        </div>
+        <div class="charts4">
+          <div class="chartbox"><div class="charttitle">Temperature (°C)</div><div id="chart-cont-temp"></div></div>
+          <div class="chartbox"><div class="charttitle">Altitude (m)</div><div id="chart-cont-alt"></div></div>
+          <div class="chartbox"><div class="charttitle">GPS Altitude (m)</div><div id="chart-cont-gpsalt"></div></div>
+          <div class="chartbox"><div class="charttitle">Voltage (V)</div><div id="chart-cont-volt"></div></div>
+        </div>
+      </section>
+
+      <!-- PAYLOAD -->
+      <section class="panel h42">
+        <div class="panel-title">
+          <div>TETHERED PAYLOAD — <span id="payloadState">STATE: —</span></div>
+          <div class="chips">
+            <span class="chip ok">Healthy: <b id="plHealthy">0</b></span>
+            <span class="chip warn">Corrupted: <b id="plBad">0</b></span>
+            <span class="chip batt"><span id="plBattPct">—</span>%</span>
+          </div>
+        </div>
+        <div class="charts2">
+          <div class="chartbox"><div class="charttitle">Gyroscope (deg/s) — R/P/Y</div><div id="chart-pl-gyro"></div></div>
+          <div class="chartbox"><div class="charttitle">Acceleration (deg/s²) — R/P/Y</div><div id="chart-pl-acc"></div></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="col right">
+      <!-- MAP + MISSION -->
+      <section class="panel h52">
+        <div class="panel-title">
+          <div>GPS LOCATION <span id="gpsMiniTitle" class="gpsmini">—, — • sats: —</span></div>
+          <div class="missionbar">
+            <button id="btnStartMission" class="btn primary xl">Start Mission (ST GPS)</button>
+            <div class="bigtime">T+ <b id="missionTimeBig">00:00:00</b></div>
+          </div>
+        </div>
+        <div id="map" class="map"></div>
+        <div class="gmaplink">
+          <a id="gmapA" href="#" target="_blank" rel="noopener">Open in Google Maps (lat,lon)</a>
+        </div>
+      </section>
+
+      <!-- COMMANDS + LOGS -->
+      <section class="panel h32">
+        <div class="panel-title">
+          <div>Telemetry Control &amp; Logs</div>
+          <div class="lastcmd">
+            <div class="tit">Last Command</div>
+            <div id="lastCmd" class="val">—</div>
+          </div>
+        </div>
+
+        <div class="cmdrow">
+          <select id="quickCmd" class="sel wide">
+            <option value="">— Quick Command —</option>
+            <option value="/clear">/clear — clear terminal</option>
+            <option value="/dummy.on">/dummy.on — dummy 1 Hz</option>
+            <option value="/dummy.off">/dummy.off — stop dummy</option>
+            <option value="/dummy.time">/dummy.time &lt;sec&gt;</option>
+            <option value="/cal">/cal — CAL</option>
+            <option value="/cx.on">/cx.on — CMD,1043,CX,ON</option>
+            <option value="/cx.off">/cx.off — CMD,1043,CX,OFF</option>
+            <option value="/st.gps">/st.gps — CMD,1043,ST,GPS</option>
+            <option value="/st">/st hh:mm:ss — CMD,1043,ST,&lt;UTC&gt;</option>
+            <option value="/sim.enable">/sim.enable — SIM,ENABLE</option>
+            <option value="/sim.activate">/sim.activate — SIM,ACTIVATE</option>
+            <option value="/sim.disable">/sim.disable — SIM,DISABLE</option>
+            <option value="/simp">/simp &lt;Pa&gt; — SIMP,&lt;Pa&gt;</option>
+            <option value="/mec.on">/mec.&lt;device&gt;.on</option>
+            <option value="/mec.off">/mec.&lt;device&gt;.off</option>
+          </select>
+          <input id="manualCmd" class="input grow" placeholder="Manual… e.g., CMD,1043,CX,ON  or  /st 13:35:59"/>
+          <button id="sendCmd" class="btn">Send</button>
+        </div>
+
+        <div class="logs">
+          <div class="log-controls">
+            <div class="left">
+              <label class="tiny">Latest</label>
+              <input type="number" id="logN" min="50" max="5000" value="500" class="input sm">
+              <button id="refreshLogs" class="btn ghost sm">Refresh</button>
+              <label class="chk"><input type="checkbox" id="autoScroll" checked> Auto-scroll</label>
+              <label class="chk"><input type="checkbox" id="freeze"> Freeze</label>
+              <label class="chk"><input type="checkbox" id="wrapLines"> Wrap</label>
+            </div>
+            <div class="right">
+              <div class="actions">
+                <button id="btnResetAllTop" class="btn danger sm">Reset All</button>
+                <button id="btnSaveCSV" class="btn sm">Open CSV Folder</button>
+                <button id="copyLogs" class="btn sm">Copy</button>
+              </div>
+            </div>
+          </div>
+          <div id="rawBox" class="rawbox"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    // hook สำหรับแสดง Last Command ตัวใหญ่
+    window.__setLastCommand = (txt) => {
+      const el = document.getElementById('lastCmd');
+      if (el) el.textContent = txt || '—';
+    };
+    // ให้ missionTime (เล็ก) อัปเดต missionTimeBig ด้วย
+    (function syncMission(){
+      const small = document.getElementById('missionTime');
+      const big = document.getElementById('missionTimeBig');
+      if (!small || !big) return;
+      const obs = new MutationObserver(() => { big.textContent = small.textContent.replace('Mission: ',''); });
+      obs.observe(small, { childList:true, characterData:true, subtree:true });
+    })();
+  </script>
+
+  <script>window.DGS_TEAM_ID = 1043;</script>
+  <script src="app.js"></script>
+</body>
+</html>
