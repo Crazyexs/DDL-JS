@@ -6,30 +6,36 @@
 
 *{box-sizing:border-box}
 html,body{height:100%}
-body{margin:0;background:var(--bg);color:var(--fg);
+body{
+  margin:0;background:var(--bg);color:var(--fg);
   font:500 15px/1.45 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
-  overflow:hidden;}
-
+  overflow:hidden;
+}
 a{color:var(--accent);text-decoration:none}
 
 /* Top bars */
-.topbar{display:flex;justify-content:space-between;align-items:center;
-  background:#0c0e13;border-bottom:1px solid var(--edge);padding:10px 14px;height:64px}
+.topbar{
+  display:flex;justify-content:space-between;align-items:center;
+  background:#0c0e13;border-bottom:1px solid var(--edge);padding:10px 14px;height:64px
+}
 .brandwrap{display:flex;gap:12px;align-items:center}
 .logo{width:46px;height:46px;border-radius:50%;border:1px solid var(--edge);background:#0e1219}
 .brand{font-size:20px;font-weight:900;letter-spacing:.5px}
 .tag{opacity:.9}
 .sub{font-size:12px;color:var(--muted)}
-.topmeta{display:flex;gap:12px;align-items:center}
-.clock{font-weight:800}
 .pill{padding:6px 10px;border-radius:999px;border:1px solid var(--edge);font-size:12px;background:#121621}
 .pill.ok{background:#122418;color:#c8ffd8;border-color:#2a4f38}
 .gpsmini{font-size:12px;color:var(--muted)}
 
-.strip{display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:10px 12px;
-  border-bottom:1px solid var(--edge);background:#0f1218;height:66px}
-.group{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--edge);
-  border-radius:12px;padding:8px 10px}
+/* strip */
+.strip{
+  display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:10px 12px;
+  border-bottom:1px solid var(--edge);background:#0f1218;height:66px
+}
+.group{
+  display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--edge);
+  border-radius:12px;padding:8px 10px
+}
 .group.grow{flex:1;min-height:50px}
 .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-right:4px}
 .radio{display:flex;align-items:center;gap:6px}
@@ -54,8 +60,18 @@ a{color:var(--accent);text-decoration:none}
   padding: 12px;
 }
 .col{display:flex;flex-direction:column;gap:12px;min-height:0}
-.panel{background:var(--panel);border:1px solid var(--edge);border-radius:12px;padding:10px;min-height:0;display:flex;flex-direction:column}
-.panel-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-weight:800}
+
+/* Panels */
+.panel{
+  background:#0b1220;border:1px solid #1e2942;border-radius:16px;
+  padding:12px;min-height:0;display:flex;flex-direction:column;
+  box-shadow:0 1px 0 rgba(255,255,255,0.02) inset,0 8px 24px rgba(0,0,0,0.25);
+}
+.panel-title{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:4px 2px 10px;border-bottom:1px solid rgba(255,255,255,0.05);
+  margin-bottom:10px;font-weight:800
+}
 .chips{display:flex;gap:8px;align-items:center}
 .chip{border:1px solid var(--edge);border-radius:999px;padding:6px 10px;font-size:12px;background:#0f141d}
 .chip.ok{color:var(--ok);border-color:#1a3b25}
@@ -66,29 +82,56 @@ a{color:var(--accent);text-decoration:none}
 .h52{height:52vh}
 .h32{height:32vh}
 
-/* charts */
-.charts4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;min-height:0}
-.charts2{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;min-height:0}
-.chartbox{background:#0e1219;border:1px solid var(--edge);border-radius:10px;padding:6px;display:flex;flex-direction:column}
-.charttitle{font-size:12px;color:var(--muted);margin-bottom:4px}
-#chart-cont-temp,#chart-cont-alt,#chart-cont-gpsalt,#chart-cont-volt,
-#chart-pl-acc,#chart-pl-gyro{height:calc(100% - 22px);min-height:110px;border-radius:8px}
+/* Chart grids */
+.charts4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;min-height:0}
+.charts2{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;min-height:0}
 
-/* map + mission */
-.map{flex:1;border-radius:10px;border:1px solid var(--edge);min-height:0}
+/* Chart card */
+.chartbox{
+  background:#0e1628;border:1px solid #243048;border-radius:14px;
+  padding:10px 12px;display:flex;flex-direction:column;overflow:hidden;
+  box-shadow:0 0 0 1px rgba(255,255,255,0.02) inset,0 10px 24px rgba(2,8,20,0.35);
+  transition:border-color .15s ease, box-shadow .15s ease, transform .05s ease;
+}
+.chartbox:hover{
+  border-color:#2f3d62;
+  box-shadow:0 0 0 1px rgba(100,160,255,0.07) inset,0 14px 28px rgba(3,10,22,0.5);
+}
+.charttitle{font-size:12px;letter-spacing:.02em;color:#cfe3ff;opacity:.8;margin-bottom:6px}
+
+/* ECharts container heights inside card */
+.chartbox > div:last-child{height:180px}
+.charts2 .chartbox > div:last-child{height:220px}
+
+/* Map + mission */
+.map{
+  flex:none;                 /* stop it from stretching */
+  height:180px;              /* small, can be toggled by class */
+  border-radius:10px;
+  border:1px solid var(--edge);
+  min-height:0;
+}
+.map.small{ height:180px; }
+.map.large{ height:320px; }
 .gmaplink{margin-top:6px;font-size:14px}
 .missionbar{display:flex;gap:12px;align-items:center}
 .bigtime{font-size:32px;letter-spacing:1px;font-weight:1000}
 
-/* logs */
-.cmdrow{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+/* Logs (YouTube-style) */
 .logs{display:flex;flex-direction:column;min-height:0;flex:1}
 .logs .log-controls{display:flex;align-items:center;justify-content:space-between;margin:6px 0}
 .tiny{font-size:11px;color:var(--muted);margin-right:6px}
 .chk{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:13px}
-.rawbox{background:#0d1016;border:1px solid var(--edge);border-radius:10px;flex:1;overflow:auto;
+
+/* a chat-like box with its own scroll, always visible */
+.rawbox{
+  background:#0d1016;border:1px solid var(--edge);border-radius:10px;
+  flex:none;                 /* do not expand unexpectedly */
+  height: 240px;             /* fixed, readable height */
+  overflow:auto;
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.35;
-  padding:0;min-height:0}
+  padding:0;min-height:0
+}
 .logline{padding:6px 10px;white-space:pre;display:flex;gap:10px}
 .wrap .logline{white-space:pre-wrap;word-break:break-word}
 .logline:nth-child(odd){background:rgba(255,255,255,.02)}
@@ -98,9 +141,30 @@ a{color:var(--accent);text-decoration:none}
 .k.err{color:var(--err);font-weight:800}
 .k.warn{color:var(--warn);font-weight:800}
 
-/* responsive fallback */
+/* “Jump to Live” floating bar inside logs (like YouTube) */
+.jump-live{
+  display:flex;justify-content:center;margin-top:8px;
+}
+.jump-live[hidden]{display:none}
+
+/* Responsive */
 @media (max-width:1200px){
-  .screen{grid-template-columns: 1fr}
-  .h42,.h52,.h32{height:48vh}
+  .screen{grid-template-columns:1fr}
+  .h42,.h52,.h32{height:auto}
   body{overflow:auto}
+  .charts4{grid-template-columns:repeat(2,1fr)}
+  .rawbox{height:220px}
+}
+@media (max-width:700px){
+  .charts4,.charts2{grid-template-columns:1fr}
+  .chartbox > div:last-child{height:200px}
+  .rawbox{height:200px}
+}
+
+/* Smaller, responsive T+ time */
+.missionbar .bigtime,
+.bigtime{
+  font-size: clamp(18px, 2.4vw, 26px);
+  letter-spacing: .5px;
+  font-weight: 900;
 }

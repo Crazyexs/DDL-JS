@@ -4,187 +4,250 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>DAEDALUS #1043 — Ground Station</title>
-  <link rel="stylesheet" href="styles.css"/>
+
+  <!-- Libs -->
   <link rel="preconnect" href="https://cdn.jsdelivr.net"/>
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1/dist/leaflet.css"/>
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1/dist/leaflet.js"></script>
+
+  <style>
+    :root{ --bg:#0f1116; --panel:#171a21; --edge:#262a33; --fg:#e6eaf2; --muted:#9aa3b2; --accent:#4da3ff; --ok:#3bd671; --warn:#ffb454; --err:#ff5c7c; --info:#4fe0c6; }
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--fg);font:500 15px/1.45 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;overflow:hidden;display:flex;flex-direction:column}
+    a{color:var(--accent);text-decoration:none}
+
+    .topbar{display:flex;justify-content:space-between;align-items:center;background:#0c0e13;border-bottom:1px solid var(--edge);padding:10px 14px;height:64px}
+    .brandwrap{display:flex;gap:12px;align-items:center}
+    .logo{width:46px;height:46px;border-radius:50%;border:1px solid var(--edge);background:#0e1219}
+    .brand{font-size:20px;font-weight:900;letter-spacing:.5px}
+    .tag{opacity:.9}
+    .sub{font-size:12px;color:var(--muted)}
+    .pill{padding:6px 10px;border-radius:999px;border:1px solid var(--edge);font-size:12px;background:#121621}
+    .pill.ok{background:#122418;color:#c8ffd8;border-color:#2a4f38}
+
+    .top-clocks{display:flex;gap:10px}
+    .clock-badge{background:#1a2332;padding:6px 14px;border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;border:1px solid #2a3a52;color:#cfe3ff}
+    .clock-badge.mission{color:#00ff88;border-color:#00ff88}
+
+    .strip{display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:10px 12px;border-bottom:1px solid var(--edge);background:#0f1218}
+    .group{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--edge);border-radius:12px;padding:8px 10px}
+    .group.grow{flex:1;min-height:50px}
+    .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-right:4px}
+    .radio{display:flex;align-items:center;gap:6px}
+    .sel,.input{background:#0d1016;border:1px solid var(--edge);color:var(--fg);padding:8px 10px;border-radius:10px;min-height:36px}
+    .input::placeholder{color:#5b6675}
+    .btn{background:#131722;border:1px solid var(--edge);color:var(--fg);padding:8px 12px;border-radius:10px;cursor:pointer;min-height:36px}
+    .btn:hover{border-color:#3a4250}
+    .btn.primary{background:var(--accent);border-color:var(--accent);color:#081019;font-weight:900}
+    .btn.ghost{background:#0d1016}
+    .btn.sm{min-height:30px;padding:6px 10px}
+    .btn.danger{background:#2a1015;border-color:#5b2230;color:#ffc8d5}
+    .sel.wide{min-width:220px}
+    .input.grow{flex:1}
+
+    .screen{height:calc(100vh - 64px - 76px);display:grid;grid-template-columns:58% 42%;grid-template-rows:1fr 1fr;gap:12px;padding:12px;overflow:hidden}
+    .panel{background:#0b1220;border:1px solid #1e2942;border-radius:16px;padding:12px;min-height:0;display:flex;flex-direction:column;box-shadow:0 1px 0 rgba(255,255,255,0.02) inset,0 8px 24px rgba(0,0,0,0.25)}
+    .panel-title{display:flex;align-items:center;justify-content:space-between;padding:4px 2px 10px;border-bottom:1px solid rgba(255,255,255,0.05);margin-bottom:10px;font-weight:800}
+    .chips{display:flex;gap:8px;align-items:center}
+    .chip{border:1px solid var(--edge);border-radius:999px;padding:6px 10px;font-size:12px;background:#0f141d}
+    .chip.ok{color:var(--ok);border-color:#1a3b25}
+    .chip.warn{color:var(--warn);border-color:#3e2c10}
+    .chip.batt{color:#cfe3ff;border-color:#2b3a55}
+
+    .container-panel{grid-column:1;grid-row:1}
+    .payload-panel{grid-column:1;grid-row:2}
+    .map-panel{grid-column:2;grid-row:1}
+    .logs-panel{grid-column:2;grid-row:2}
+
+    .charts-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;min-height:0;flex:1;padding:4px;grid-auto-rows:1fr}
+    .charts-grid.horizontal{grid-template-columns:1fr 1fr;grid-template-rows:1fr}
+    .chartbox{background:#0e1628;border:1px solid #243048;border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 0 0 1px rgba(255,255,255,0.02) inset,0 10px 24px rgba(2,8,20,0.35);min-height:0;height:100%}
+    .charttitle{font-size:12px;color:#cfe3ff;opacity:.8;margin-bottom:6px}
+    .chartbox>div:last-child{flex:1 1 auto;min-height:0;height:100%}
+    #chart-cont-temp,#chart-cont-alt,#chart-cont-gpsalt,#chart-cont-volt,#chart-pl-gyro,#chart-pl-acc{width:100%;height:100%;min-height:0}
+
+    .map{flex:none;height:200px;border-radius:10px;border:1px solid var(--edge);min-height:0}
+    .map.large{height:320px}
+    .gmaplink{margin-top:6px;font-size:14px}
+    .missionbar{display:flex;gap:12px;align-items:center}
+    .bigtime{font-size:28px;letter-spacing:.5px;font-weight:900}
+    .gpsmini{font-size:12px;color:var(--muted)}
+
+    .logs-content{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0}
+    .cmdrow{display:flex;gap:5px;margin-bottom:5px;flex-wrap:wrap}
+    .input{background:#0d1016;border:1px solid var(--edge);color:var(--fg);padding:6px 8px;border-radius:8px;font-size:12px}
+    .input.grow{flex:1}
+    .sel.wide{min-width:200px}
+    .log-controls{display:flex;align-items:center;justify-content:space-between;margin:6px 0;gap:8px;flex-wrap:wrap}
+    .chk{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:13px}
+    .rawbox{background:#0d1016;border:1px solid var(--edge);border-radius:10px;flex:none;height:260px;overflow:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.35;padding:0;min-height:0}
+    .logline{padding:6px 10px;white-space:pre;display:flex;gap:10px}
+    .wrap .logline{white-space:pre-wrap;word-break:break-word}
+    .logline:nth-child(odd){background:rgba(255,255,255,.02)}
+    .ts{color:#93d2ff;min-width:72px;opacity:.9}
+    .text{color:#cfe3ff}
+    .k.cmd{color:var(--info);font-weight:800}
+    .k.err{color:var(--err);font-weight:800}
+    .k.warn{color:var(--warn);font-weight:800}
+    .jump-live{display:flex;justify-content:center;margin-top:8px}
+    .jump-live[hidden]{display:none}
+
+    @media(max-width:1200px){.screen{grid-template-columns:1fr}body{overflow:auto}.rawbox{height:220px}}
+  </style>
 </head>
 <body>
   <!-- HEADER -->
   <header class="topbar">
     <div class="brandwrap">
-      <img src="assets/daedalus.png" class="logo" alt="DAEDALUS"/>
+      <div class="logo"></div>
       <div>
         <div class="brand">DAEDALUS <span class="tag">#1043</span></div>
-        <div class="sub">Portable CanSat Ground Station</div>
+        <div class="sub">DDL-MissionControl</div>
       </div>
     </div>
-
-    <!-- Top clocks (หนึ่งชุดเท่านั้น: ไม่มี ID ซ้ำ) -->
     <div class="top-clocks">
       <div id="utcClock" class="clock-badge">UTC: 00:00:00</div>
       <div id="missionTime" class="clock-badge mission">Mission: 00:00:00</div>
-      <div id="connPill" class="pill">Disconnected</div>
     </div>
+    <div class="status"><div id="connPill" class="pill">Disconnected</div></div>
   </header>
 
   <!-- CONTROL STRIP -->
-  <section class="strip">
+  <section class="strip" id="strip">
+    <!-- Mode -->
     <div class="group">
-      <div class="label">Connection</div>
+      <div class="label">Mode</div>
       <label class="radio"><input type="radio" name="mode" id="modeBrowser" checked> Browser</label>
       <label class="radio"><input type="radio" name="mode" id="modeServer"> Server</label>
+    </div>
+
+    <!-- Browser Serial controls -->
+    <div class="group" id="browserSerialPanel">
+      <div class="label">Browser Serial</div>
+      <select id="browserBaudSel" class="sel">
+        <option>115200</option><option>57600</option><option>38400</option><option>19200</option><option>9600</option>
+      </select>
+      <button id="btnBrowserPick" class="btn">Pick Port…</button>
       <button id="btnConnectBrowser" class="btn primary">Connect</button>
       <button id="btnDisconnectBrowser" class="btn ghost">Disconnect</button>
     </div>
 
-    <div class="group" id="serverSerialPanel" style="display:none">
-      <div class="label">Server Serial</div>
-      <select id="portSel" class="sel"></select>
-      <select id="baudSel" class="sel"></select>
-      <button id="applyPort" class="btn primary">Apply</button>
-      <button id="refreshPorts" class="btn ghost">Refresh</button>
+    <!-- Server controls -->
+    <div class="group" id="serverPanel" style="display:none">
+      <div class="label">Server Bridge</div>
+      <input id="wsUrl" class="input" style="width:260px" value="ws://localhost:8787" />
+      <button id="btnConnectServer" class="btn primary">Connect</button>
+      <button id="btnDisconnectServer" class="btn ghost">Disconnect</button>
+      <select id="portSel" class="sel wide" title="Server ports"></select>
+      <select id="baudSel" class="sel">
+        <option>115200</option><option>57600</option><option>38400</option><option>19200</option><option>9600</option>
+      </select>
+      <button id="applyPort" class="btn">Open</button>
+      <button id="closePort" class="btn ghost">Close</button>
+      <button id="refreshPorts" class="btn">Refresh</button>
     </div>
 
-    <!-- Health KV -->
+    <!-- Health -->
     <div class="group grow" id="healthKV">
-      <!-- app.js จะเติมค่าให้ 5 ช่องนี้ -->
-      <div class="kv item"><div class="k">Port</div><div class="v big" id="kvPort">—</div></div>
-      <div class="kv item"><div class="k">Baud</div><div class="v big" id="kvBaud">—</div></div>
-      <div class="kv item"><div class="k">RX</div><div class="v big ok" id="kvRx">0</div></div>
-      <div class="kv item"><div class="k">Lost</div><div class="v big" id="kvLost">0</div></div>
-      <div class="kv item wide"><div class="k">CSV</div><div class="v" id="kvCsv">data\Flight_1043.csv</div></div>
+      <div class="kv item"><div class="k">Link</div><div id="linkType" class="v big">—</div></div>
+      <div class="kv item"><div class="k">Port</div><div id="portName" class="v big">—</div></div>
+      <div class="kv item"><div class="k">Baud</div><div id="baudVal" class="v big">—</div></div>
+      <div class="kv item"><div class="k">RX</div><div id="rxCount" class="v big ok">0</div></div>
+      <div class="kv item"><div class="k">Lost</div><div id="lossCount" class="v big">0</div></div>
+      <div class="kv item wide"><div class="k">CSV</div><div class="v" id="csvName">Flight_1043.csv</div></div>
+      <div class="kv item wide"><div class="k">Last Command</div><div class="v big" id="healthLastCmd">—</div></div>
     </div>
   </section>
 
-  <!-- SINGLE-SCREEN -->
+  <!-- MAIN GRID -->
   <main class="screen">
-    <!-- LEFT -->
-    <div class="col left">
-      <!-- CONTAINER -->
-      <section class="panel h42">
-        <div class="panel-title">
-          <div>CONTAINER — <span id="containerState">STATE: —</span></div>
-          <div class="chips">
-            <span class="chip ok">Healthy: <b id="contHealthy">0</b></span>
-            <span class="chip warn">Corrupted: <b id="contBad">0</b></span>
-            <span class="chip batt"><span id="contBattPct">—</span>%</span>
-          </div>
+    <!-- CONTAINER -->
+    <section class="panel container-panel">
+      <div class="panel-title">
+        <div>CONTAINER — <span id="containerState" class="state-text">STATE: —</span></div>
+        <div class="chips">
+          <span class="chip ok">OK: <b id="contHealthy">0</b></span>
+          <span class="chip warn">Bad: <b id="contBad">0</b></span>
+          <span class="chip batt"><span id="contBattPct">—</span>%</span>
         </div>
-        <div class="charts4">
-          <div class="chartbox"><div class="charttitle">Temperature (°C)</div><div id="chart-cont-temp"></div></div>
-          <div class="chartbox"><div class="charttitle">Altitude (m)</div><div id="chart-cont-alt"></div></div>
-          <div class="chartbox"><div class="charttitle">GPS Altitude (m)</div><div id="chart-cont-gpsalt"></div></div>
-          <div class="chartbox"><div class="charttitle">Voltage (V)</div><div id="chart-cont-volt"></div></div>
-        </div>
-      </section>
+      </div>
+      <div class="charts-grid">
+        <div class="chartbox"><div class="charttitle">Temperature (°C)</div><div id="chart-cont-temp"></div></div>
+        <div class="chartbox"><div class="charttitle">Altitude (m)</div><div id="chart-cont-alt"></div></div>
+        <div class="chartbox"><div class="charttitle">GPS Alt (m)</div><div id="chart-cont-gpsalt"></div></div>
+        <div class="chartbox"><div class="charttitle">Voltage (V)</div><div id="chart-cont-volt"></div></div>
+      </div>
+    </section>
 
-      <!-- PAYLOAD -->
-      <section class="panel h42">
-        <div class="panel-title">
-          <div>TETHERED PAYLOAD — <span id="payloadState">STATE: —</span></div>
-          <div class="chips">
-            <span class="chip ok">Healthy: <b id="plHealthy">0</b></span>
-            <span class="chip warn">Corrupted: <b id="plBad">0</b></span>
-            <span class="chip batt"><span id="plBattPct">—</span>%</span>
-          </div>
+    <!-- PAYLOAD -->
+    <section class="panel payload-panel">
+      <div class="panel-title">
+        <div>PAYLOAD — <span id="payloadState" class="state-text">STATE: —</span></div>
+        <div class="chips">
+          <span class="chip ok">OK: <b id="plHealthy">0</b></span>
+          <span class="chip warn">Bad: <b id="plBad">0</b></span>
+          <span class="chip batt"><span id="plBattPct">—</span>%</span>
         </div>
-        <div class="charts2">
-          <div class="chartbox"><div class="charttitle">Gyroscope (deg/s) — R/P/Y</div><div id="chart-pl-gyro"></div></div>
-          <div class="chartbox"><div class="charttitle">Acceleration (deg/s²) — R/P/Y</div><div id="chart-pl-acc"></div></div>
-        </div>
-      </section>
-    </div>
+      </div>
+      <div class="charts-grid horizontal">
+        <div class="chartbox"><div class="charttitle">Gyroscope (deg/s) — R/P/Y</div><div id="chart-pl-gyro"></div></div>
+        <div class="chartbox"><div class="charttitle">Acceleration (deg/s²) — R/P/Y</div><div id="chart-pl-acc"></div></div>
+      </div>
+    </section>
 
-    <!-- RIGHT -->
-    <div class="col right">
-      <!-- MAP + MISSION -->
-      <section class="panel h52">
-        <div class="panel-title">
-          <div>GPS LOCATION <span id="gpsMiniTitle" class="gpsmini">—, — • sats: —</span></div>
-          <div class="missionbar">
-            <button id="btnStartMission" class="btn primary xl">Start Mission (ST GPS)</button>
-            <div class="bigtime">T+ <b id="missionTimeBig">00:00:00</b></div>
-          </div>
+    <!-- MAP -->
+    <section class="panel map-panel">
+      <div class="panel-title">
+        <div>GPS LOCATION <span id="gpsMiniTitle" class="gpsmini">—, — • sats: —</span></div>
+        <div class="missionbar">
+          <button id="btnStartMission" class="btn primary sm">Start Mission</button>
+          <button id="toggleMapSize" class="btn sm ghost">Full</button>
+          <div class="bigtime">T+ <b id="missionTimeBig">00:00:00</b></div>
         </div>
-        <div id="map" class="map"></div>
-        <div class="gmaplink">
-          <a id="gmapA" href="#" target="_blank" rel="noopener">Open in Google Maps (lat,lon)</a>
-        </div>
-      </section>
+      </div>
+      <div id="map" class="map"></div>
+      <div class="gmaplink"><a id="gmapA" href="#" target="_blank" rel="noopener">Open in Google Maps</a></div>
+    </section>
 
-      <!-- COMMANDS + LOGS -->
-      <section class="panel h32">
-        <div class="panel-title">
-          <div>Telemetry Control &amp; Logs</div>
-          <div class="lastcmd">
-            <div class="tit">Last Command</div>
-            <div id="lastCmd" class="val">—</div>
-          </div>
-        </div>
-
+    <!-- LOGS -->
+    <section class="panel logs-panel">
+      <div class="panel-title">
+        <div>Telemetry Control &amp; Logs</div>
+        <div class="lastcmd"><div class="tit" style="font-size:12px;color:var(--muted)">Last Cmd</div><div id="lastCmd" class="val" style="font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--ok)">—</div></div>
+      </div>
+      <div class="logs-content">
         <div class="cmdrow">
-          <select id="quickCmd" class="sel wide">
-            <option value="">— Quick Command —</option>
-            <option value="/clear">/clear — clear terminal</option>
-            <option value="/dummy.on">/dummy.on — dummy 1 Hz</option>
-            <option value="/dummy.off">/dummy.off — stop dummy</option>
-            <option value="/dummy.time">/dummy.time &lt;sec&gt;</option>
-            <option value="/cal">/cal — CAL</option>
-            <option value="/cx.on">/cx.on — CMD,1043,CX,ON</option>
-            <option value="/cx.off">/cx.off — CMD,1043,CX,OFF</option>
-            <option value="/st.gps">/st.gps — CMD,1043,ST,GPS</option>
-            <option value="/st">/st hh:mm:ss — CMD,1043,ST,&lt;UTC&gt;</option>
-            <option value="/sim.enable">/sim.enable — SIM,ENABLE</option>
-            <option value="/sim.activate">/sim.activate — SIM,ACTIVATE</option>
-            <option value="/sim.disable">/sim.disable — SIM,DISABLE</option>
-            <option value="/simp">/simp &lt;Pa&gt; — SIMP,&lt;Pa&gt;</option>
-            <option value="/mec.on">/mec.&lt;device&gt;.on</option>
-            <option value="/mec.off">/mec.&lt;device&gt;.off</option>
-          </select>
-          <input id="manualCmd" class="input grow" placeholder="Manual… e.g., CMD,1043,CX,ON  or  /st 13:35:59"/>
-          <button id="sendCmd" class="btn">Send</button>
+          <select id="quickCmd" class="sel wide"></select>
+          <input id="manualCmd" class="input grow" placeholder="Manual command…"/>
+          <button id="sendCmd" class="btn primary sm">Send</button>
+          <button id="btnDemoPaste" class="btn sm ghost" title="Paste a sample telemetry line">Demo paste</button>
         </div>
-
-        <div class="logs">
-          <div class="log-controls">
-            <div class="left">
-              <label class="tiny">Latest</label>
-              <input type="number" id="logN" min="50" max="5000" value="500" class="input sm">
-              <button id="refreshLogs" class="btn ghost sm">Refresh</button>
-              <label class="chk"><input type="checkbox" id="autoScroll" checked> Auto-scroll</label>
-              <label class="chk"><input type="checkbox" id="freeze"> Freeze</label>
-              <label class="chk"><input type="checkbox" id="wrapLines"> Wrap</label>
-            </div>
-            <div class="right">
-              <div class="actions">
-                <button id="btnResetAllTop" class="btn danger sm">Reset All</button>
-                <button id="btnSaveCSV" class="btn sm">Open CSV Folder</button>
-                <button id="copyLogs" class="btn sm">Copy</button>
-              </div>
-            </div>
+        <div class="log-controls">
+          <div class="left" style="display:flex;gap:8px;align-items:center">
+            <label style="font-size:12px;color:var(--muted)">Latest</label>
+            <input type="number" id="logN" min="50" max="5000" value="500" class="input" style="width:70px">
+            <button id="refreshLogs" class="btn ghost sm">Refresh</button>
+            <label class="chk"><input type="checkbox" id="autoScroll" checked> Auto</label>
+            <label class="chk"><input type="checkbox" id="freeze"> Freeze</label>
+            <label class="chk"><input type="checkbox" id="wrapLines"> Wrap</label>
           </div>
-          <div id="rawBox" class="rawbox"></div>
+          <div class="right" style="display:flex;gap:8px;align-items:center">
+            <button id="btnResetAllTop" class="btn danger sm">Reset All</button>
+            <button id="btnSaveCSV" class="btn sm">CSV</button>
+            <button id="copyLogs" class="btn sm">Copy</button>
+          </div>
         </div>
-      </section>
-    </div>
+        <div id="rawBox" class="rawbox" aria-live="polite"></div>
+        <div id="jumpLive" class="jump-live" hidden><button id="jumpLiveBtn" class="btn primary sm">Jump to Live</button></div>
+      </div>
+    </section>
   </main>
 
+  <!-- sync small→big time -->
   <script>
-    // hook สำหรับแสดง Last Command ตัวใหญ่
-    window.__setLastCommand = (txt) => {
-      const el = document.getElementById('lastCmd');
-      if (el) el.textContent = txt || '—';
-    };
-    // ให้ missionTime (เล็ก) อัปเดต missionTimeBig ด้วย
-    (function syncMission(){
-      const small = document.getElementById('missionTime');
-      const big = document.getElementById('missionTimeBig');
-      if (!small || !big) return;
-      const obs = new MutationObserver(() => { big.textContent = small.textContent.replace('Mission: ',''); });
-      obs.observe(small, { childList:true, characterData:true, subtree:true });
-    })();
+    (function(){const s=document.getElementById('missionTime'),b=document.getElementById('missionTimeBig');if(!s||!b)return;new MutationObserver(()=>{b.textContent=s.textContent.replace('Mission: ','')}).observe(s,{childList:true,characterData:true,subtree:true})})();
   </script>
 
   <script>window.DGS_TEAM_ID = 1043;</script>

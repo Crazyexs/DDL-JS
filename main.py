@@ -30,7 +30,7 @@ USE_SERVER_SERIAL = True       # True = backend อ่าน/เขียน ser
 
 # โฟลเดอร์หลัก
 ROOT_DIR = Path(__file__).resolve().parent
-DATA_DIR = Path(r"C:\Users\1mons\Downloads\DDL-rust\data")  # ตามที่ผู้ใช้ระบุ
+DATA_DIR = Path(r"C:\Users\Admin\Downloads\DDL-JS\data")  # ตามที่ผู้ใช้ระบุ
 LOG_DIR = ROOT_DIR / "logs"
 UI_DIR = ROOT_DIR / "ui"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
