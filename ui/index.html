@@ -40,88 +40,67 @@
 
   <!-- CONTROL STRIP -->
   <section class="strip" id="strip">
-    <!-- Mode -->
-    <div class="group">
-      <div class="label">Mode</div>
-      <label class="radio"><input type="radio" name="mode" id="modeBrowser" checked> Browser</label>
-      <label class="radio"><input type="radio" name="mode" id="modeServer"> Server</label>
-    </div>
-
-    <!-- Browser Serial controls -->
-    <div class="group" id="browserSerialPanel">
-      <div class="label">Browser Serial</div>
-      <select id="browserBaudSel" class="sel">
-        <option>115200</option><option>57600</option><option>38400</option><option>19200</option><option>9600</option>
-      </select>
-      <button id="btnBrowserPick" class="btn">Pick Port…</button>
-      <button id="btnConnectBrowser" class="btn primary">Connect</button>
-      <button id="btnDisconnectBrowser" class="btn ghost">Disconnect</button>
-    </div>
-
-    <!-- Server controls -->
-    <div class="group" id="serverPanel" style="display:none">
-      <div class="label">Server Bridge</div>
-      <input id="wsUrl" class="input" style="width:260px" value="ws://localhost:8787" />
-      <button id="btnConnectServer" class="btn primary">Connect</button>
-      <button id="btnDisconnectServer" class="btn ghost">Disconnect</button>
-      <select id="portSel" class="sel wide" title="Server ports"></select>
-      <select id="baudSel" class="sel">
-        <option>115200</option><option>57600</option><option>38400</option><option>19200</option><option>9600</option>
-      </select>
-      <button id="applyPort" class="btn">Open</button>
-      <button id="closePort" class="btn ghost">Close</button>
-      <button id="refreshPorts" class="btn">Refresh</button>
-    </div>
-
-    <!-- Health -->
     <div class="group grow" id="healthKV">
-      <div class="kv item"><div class="k">Link</div><div id="linkType" class="v big">—</div></div>
+      <!-- Health -->
+      <div class="kv item"><div class="k">Link</div><div id="linkType" class="v big">Backend</div></div>
       <div class="kv item"><div class="k">Port</div><div id="portName" class="v big">—</div></div>
       <div class="kv item"><div class="k">Baud</div><div id="baudVal" class="v big">—</div></div>
-      <div class="kv item"><div class="k">RX</div><div id="rxCount" class="v big ok">0</div></div>
-      <div class="kv item"><div class="k">Lost</div><div id="lossCount" class="v big">0</div></div>
-      <div class="kv item wide"><div class="k">CSV</div><div class="v" id="csvName">Flight_1043.csv</div></div>
+      <div class="kv item wide"><div class="k">Log File</div><div class="v" id="csvName">Flight_1043.csv</div></div>
       <div class="kv item wide"><div class="k">Last Command</div><div class="v big" id="healthLastCmd">—</div></div>
+      <!-- Mission Status -->
+      <div class="kv-major">
+        <div class="k">State</div>
+        <div id="missionState" class="v">--</div>
+      </div>
+      <div class="kv-major">
+        <div class="k">Mode</div>
+        <div id="missionMode" class="v">--</div>
+      </div>
+      <div class="kv-major">
+        <div class="k">GPS Sats</div>
+        <div id="gpsSats" class="v">--</div>
+      </div>
+      <!-- Compass -->
+      <div class="compass-container">
+        <div class="compass">
+          <div class="compass-arrow" id="compassArrow"></div>
+        </div>
+        <div class="heading-text" id="heading">--°</div>
+      </div>
+       <!-- Packet Counters -->
+      <div class="kv-major">
+          <div class="k">RX Packets</div>
+          <div id="rxCount" class="v ok">0</div>
+      </div>
+      <div class="kv-major">
+          <div class="k">Lost Packets</div>
+          <div id="lossCount" class="v">0</div>
+      </div>
+    </div>
+    <div class="group">
+        <div class="label">Actions</div>
+        <button id="btnOpenCsvFolder" class="btn sm">Open Log Folder</button>
+        <button id="btnSim" class="btn sm">Run Sim</button>
     </div>
   </section>
 
   <!-- MAIN GRID -->
   <main class="screen">
-    <!-- CONTAINER -->
-    <section class="panel container-panel">
+    <!-- GRAPHS (Left Column) -->
+    <section class="panel graphs-panel">
       <div class="panel-title">
-        <div>CONTAINER — <span id="containerState" class="state-text">STATE: —</span></div>
-        <div class="chips">
-          <span class="chip ok">OK: <b id="contHealthy">0</b></span>
-          <span class="chip warn">Bad: <b id="contBad">0</b></span>
-          <span class="chip batt"><span id="contBattPct">—</span>%</span>
-        </div>
+        <div>TELEMETRY GRAPHS</div>
       </div>
       <div class="charts-grid">
-        <div class="chartbox"><div class="charttitle">Temperature (°C)</div><div id="chart-cont-temp"></div></div>
-        <div class="chartbox"><div class="charttitle">Altitude (m)</div><div id="chart-cont-alt"></div></div>
-        <div class="chartbox"><div class="charttitle">GPS Alt (m)</div><div id="chart-cont-gpsalt"></div></div>
-        <div class="chartbox"><div class="charttitle">Voltage (V)</div><div id="chart-cont-volt"></div></div>
+        <div class="chartbox"><div class="charttitle">Altitude (m)</div><div id="chart-altitude"></div></div>
+        <div class="chartbox"><div class="charttitle">Power (V/A)</div><div id="chart-power"></div></div>
+        <div class="chartbox"><div class="charttitle">Environment (C/kPa)</div><div id="chart-environment"></div></div>
+        <div class="chartbox"><div class="charttitle">Gyroscope (deg/s)</div><div id="chart-gyro"></div></div>
+        <div class="chartbox"><div class="charttitle">Accelerometer (m/s²)</div><div id="chart-accel"></div></div>
       </div>
     </section>
 
-    <!-- PAYLOAD -->
-    <section class="panel payload-panel">
-      <div class="panel-title">
-        <div>PAYLOAD — <span id="payloadState" class="state-text">STATE: —</span></div>
-        <div class="chips">
-          <span class="chip ok">OK: <b id="plHealthy">0</b></span>
-          <span class="chip warn">Bad: <b id="plBad">0</b></span>
-          <span class="chip batt"><span id="plBattPct">—</span>%</span>
-        </div>
-      </div>
-      <div class="charts-grid horizontal">
-        <div class="chartbox"><div class="charttitle">Gyroscope (deg/s) — R/P/Y</div><div id="chart-pl-gyro"></div></div>
-        <div class="chartbox"><div class="charttitle">Acceleration (deg/s²) — R/P/Y</div><div id="chart-pl-acc"></div></div>
-      </div>
-    </section>
-
-    <!-- MAP -->
+    <!-- MAP (Right Column, Top) -->
     <section class="panel map-panel">
       <div class="panel-title">
         <div>GPS LOCATION <span id="gpsMiniTitle" class="gpsmini">—, — • sats: —</span></div>
@@ -135,7 +114,7 @@
       <div class="gmaplink"><a id="gmapA" href="#" target="_blank" rel="noopener">Open in Google Maps</a></div>
     </section>
 
-    <!-- LOGS -->
+    <!-- LOGS (Right Column, Bottom) -->
     <section class="panel logs-panel">
       <div class="panel-title">
         <div>Telemetry Control &amp; Logs</div>
@@ -144,23 +123,21 @@
       <div class="logs-content">
         <div class="cmdrow">
           <select id="quickCmd" class="sel wide"></select>
-          <input id="manualCmd" class="input grow" placeholder="Manual command…"/>
+          <input id="manualCmd" class="input grow" placeholder="Manual command... e.g., CX,ON"/>
           <button id="sendCmd" class="btn primary sm">Send</button>
-          <button id="btnDemoPaste" class="btn sm ghost" title="Paste a sample telemetry line">Demo paste</button>
         </div>
         <div class="log-controls">
           <div class="left" style="display:flex;gap:8px;align-items:center">
             <label class="tiny">Latest</label>
             <input type="number" id="logN" min="50" max="5000" value="500" class="input" style="width:70px">
-            <button id="refreshLogs" class="btn ghost sm">Refresh</button>
+            <button id="refreshLogs" class="btn ghost sm">Clear Log</button>
             <label class="chk"><input type="checkbox" id="autoScroll" checked> Auto</label>
             <label class="chk"><input type="checkbox" id="freeze"> Freeze</label>
             <label class="chk"><input type="checkbox" id="wrapLines"> Wrap</label>
           </div>
           <div class="right" style="display:flex;gap:8px;align-items:center">
-            <button id="btnResetAllTop" class="btn danger sm">Reset All</button>
-            <button id="btnSaveCSV" class="btn sm">CSV</button>
-            <button id="copyLogs" class="btn sm">Copy</button>
+            <button id="copyLogs" class="btn sm">Copy Log</button>
+            <button id="btnResetAllTop" class="btn danger sm">Reset UI</button>
           </div>
         </div>
         <div id="rawBox" class="rawbox" aria-live="polite"></div>

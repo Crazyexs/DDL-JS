@@ -43,10 +43,9 @@ CSV_CURRENT = DATA_DIR / f"Flight_{TEAM_ID:04}.csv"
 BAUD_PRESETS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 921600]
 
 CSV_HEADER = (
-    "TEAM_ID,MISSION_TIME,PACKET_COUNT,MODE,STATE,ALTITUDE,TEMPERATURE,"
-    "PRESSURE,VOLTAGE,GYRO_R,GYRO_P,GYRO_Y,ACCEL_R,ACCEL_P,ACCEL_Y,"
-    "MAG_R,MAG_P,MAG_Y,AUTO_GYRO_ROTATION_RATE,GPS_TIME,GPS_ALTITUDE,"
-    "GPS_LATITUDE,GPS_LONGITUDE,GPS_SATS,CMD_ECHO"
+    "TEAM_ID,MISSION_TIME,PACKET_COUNT,MODE,STATE,ALTITUDE,TEMPERATURE,PRESSURE,VOLTAGE,CURRENT,"
+    "GYRO_R,GYRO_P,GYRO_Y,ACCEL_R,ACCEL_P,ACCEL_Y,GPS_TIME,GPS_ALTITUDE,GPS_LATITUDE,GPS_LONGITUDE,GPS_SATS,CMD_ECHO,"
+    "HEADING"
 )
 
 # ===================== LOGGING =====================
@@ -84,25 +83,28 @@ class Telemetry(BaseModel):
     temperature_c: float
     pressure_kpa: float
     voltage_v: float
+    current_a: float
     gyro_r_dps: float
     gyro_p_dps: float
     gyro_y_dps: float
     accel_r_dps2: float
     accel_p_dps2: float
     accel_y_dps2: float
-    mag_r_gauss: float
-    mag_p_gauss: float
-    mag_y_gauss: float
-    auto_gyro_rot_rate_dps: float
     gps_time: str
     gps_altitude_m: float
     gps_lat: float
     gps_lon: float
     gps_sats: int
     cmd_echo: str
+    
+    # Optional data
+    heading: Optional[float] = None
+    
+    # Ground station calculated fields
     gs_ts_utc: str
     gs_rx_count: int
     gs_loss_total: int
+    gs_raw_line: Optional[str] = None
 
 # ===================== GLOBAL STATE =====================
 @dataclass
@@ -177,6 +179,7 @@ async def serial_writer_worker():
         async with _serial_writer_lock:
             if _serial_transport is None:
                 log_json(level="warn", event="uplink_dropped_cmd_no_serial", cmd=cmd)
+                await broadcast_ws({"type": "error", "message": f"UPLINK FAILED for '{cmd}': No serial port."})
             else:
                 try:
                     _serial_transport.write(data)
@@ -184,6 +187,7 @@ async def serial_writer_worker():
                     ring.append(json.dumps({"uplink": cmd}))
                 except Exception as e:
                     log_json(level="error", event="serial_write_error", error=str(e), cmd=cmd)
+                    await broadcast_ws({"type": "error", "message": f"UPLINK FAILED for '{cmd}': {e}"})
 
 # ===================== TELEMETRY PIPELINE =====================
 def now_utc_iso() -> str:
@@ -202,7 +206,7 @@ async def broadcast_ws(payload: dict):
 
 async def handle_telemetry_line(raw: str):
     parts = [p.strip() for p in raw.split(",")]
-    if len(parts) < 25:
+    if len(parts) < 22: # Minimum fields as per spec
         ring.append(json.dumps({"bad_line": raw}))
         log_json(level="warn", event="telemetry_short", len=len(parts))
         return
@@ -223,27 +227,42 @@ async def handle_telemetry_line(raw: str):
     state.last_pkt = pkt
 
     # 3) build JSON for clients
-    f_ = lambda i, d=0.0: float(parts[i]) if parts[i] else d
-    i_ = lambda i, d=0: int(parts[i]) if parts[i] else d
+    s_f = lambda i, d=0.0: float(parts[i]) if len(parts) > i and parts[i] else d
+    s_i = lambda i, d=0: int(parts[i]) if len(parts) > i and parts[i] else d
+    s_s = lambda i, d='': str(parts[i]) if len(parts) > i and parts[i] else d
+    
     tel = Telemetry(
-        team_id=int(parts[0]) if parts[0] else TEAM_ID,
-        mission_time=parts[1],
-        packet_count=pkt,
-        mode=parts[3],
-        state=parts[4],
-        altitude_m=f_(5), temperature_c=f_(6), pressure_kpa=f_(7), voltage_v=f_(8),
-        gyro_r_dps=f_(9), gyro_p_dps=f_(10), gyro_y_dps=f_(11),
-        accel_r_dps2=f_(12), accel_p_dps2=f_(13), accel_y_dps2=f_(14),
-        mag_r_gauss=f_(15), mag_p_gauss=f_(16), mag_y_gauss=f_(17),
-        auto_gyro_rot_rate_dps=f_(18),
-        gps_time=parts[19],
-        gps_altitude_m=f_(20),
-        gps_lat=f_(21), gps_lon=f_(22), gps_sats=i_(23),
-        cmd_echo=parts[24],
+        team_id=s_i(0, TEAM_ID),
+        mission_time=s_s(1),
+        packet_count=s_i(2),
+        mode=s_s(3),
+        state=s_s(4),
+        altitude_m=s_f(5),
+        temperature_c=s_f(6),
+        pressure_kpa=s_f(7),
+        voltage_v=s_f(8),
+        current_a=s_f(9),
+        gyro_r_dps=s_f(10),
+        gyro_p_dps=s_f(11),
+        gyro_y_dps=s_f(12),
+        accel_r_dps2=s_f(13),
+        accel_p_dps2=s_f(14),
+        accel_y_dps2=s_f(15),
+        gps_time=s_s(16),
+        gps_altitude_m=s_f(17),
+        gps_lat=s_f(18),
+        gps_lon=s_f(19),
+        gps_sats=s_i(20),
+        cmd_echo=s_s(21),
+        # Optional data
+        heading=s_f(22),
+        # Ground station calculated fields
         gs_ts_utc=now_utc_iso(),
-        gs_rx_count=state.rx_count, gs_loss_total=state.loss_count
+        gs_rx_count=state.rx_count,
+        gs_loss_total=state.loss_count
     )
     payload = tel.dict()
+    payload['gs_raw_line'] = raw
     await broadcast_ws(payload)
     ring.append(json.dumps({"telemetry": payload}))
 
