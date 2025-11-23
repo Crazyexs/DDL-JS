@@ -8,7 +8,7 @@
   --panel: #171a21;
   --edge: #262a33;
   --fg: #e6eaf2;
-  --muted: #9aa3b2;
+  --muted: #a9b1bf;
   --accent: #4da3ff;
   --ok: #3bd671;
   --warn: #ffb454;
@@ -29,6 +29,8 @@
 
   --chart-bg: #0e1628;
   --chart-edge: #243048;
+  --chart-color-1: #5470c6;
+  --chart-color-2: #91cc75;
 
   --map-edge: var(--edge);
 }
@@ -60,6 +62,8 @@
 
   --chart-bg: #f2f6ff;
   --chart-edge: #c9d5f0;
+  --chart-color-1: #0057d8;
+  --chart-color-2: #1e8449;
 
   --map-edge: #b3c4de;
 }
@@ -81,6 +85,8 @@ body {
   color: var(--fg);
   font: 500 var(--font-base)/var(--line) ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 a { color: var(--accent); text-decoration: none; }
 
@@ -90,7 +96,8 @@ a { color: var(--accent); text-decoration: none; }
 .topbar {
   display: flex; justify-content: space-between; align-items: center;
   background: color-mix(in oklab, var(--panel) 96%, black 0%);
-  border-bottom: 1px solid var(--edge); padding: 4px 10px; height: 44px;
+  border-bottom: 1px solid var(--edge); padding: 4px 10px;
+  flex-shrink: 0; /* Prevent topbar from shrinking */
 }
 .brandwrap { display: flex; gap: 10px; align-items: center; }
 .logo { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--edge); background: var(--control-bg); }
@@ -142,14 +149,15 @@ a { color: var(--accent); text-decoration: none; }
 /* Screen grid */
 .kv .v.big { font-size: 14px; }
 .screen {
-  height: calc(100vh - 44px - 130px); /* Header - new taller Strip */
+  flex-grow: 1;
+  min-height: 0;
   display: grid;
-  grid-template-columns: 1.5fr 1fr; /* Graphs | Map/Logs */
+  grid-template-columns: 1fr 1fr; /* Values/Chart | Map/Logs */
   grid-template-rows: 1fr 1fr;
   gap: 10px;
   padding: 10px;
 }
-.graphs-panel { grid-column: 1; grid-row: 1 / span 2; }
+.values-panel { grid-column: 1; grid-row: 1 / span 2; }
 .map-panel { grid-column: 2; grid-row: 1; }
 .logs-panel { grid-column: 2; grid-row: 2; }
 
@@ -236,6 +244,7 @@ a { color: var(--accent); text-decoration: none; }
 /* Responsive */
 @media (max-width: 1200px) {
   .screen { grid-template-columns: 1fr; grid-template-rows: auto; }
+  .values-panel,
   .graphs-panel { grid-column: 1; grid-row: 1; }
   .map-panel { grid-column: 1; grid-row: 2; }
   .logs-panel { grid-column: 1; grid-row: 3; }
@@ -326,3 +335,109 @@ a { color: var(--accent); text-decoration: none; }
   font-size: 14px;
   font-weight: 700;
 }
+
+/* ================================================================== */
+/*                            NEW UI STYLES                           */
+/* ================================================================== */
+
+.strip-highlights {
+  display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-around;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--edge);
+  background: color-mix(in oklab, var(--panel) 96%, black 0%);
+  flex-shrink: 0; /* Prevent strip from shrinking */
+}
+
+.kv-major-large {
+  text-align: center;
+  padding: 0 12px;
+}
+.kv-major-large .k {
+  font-size: 14px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.kv-major-large .v {
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--accent);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.values-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.chartbox-main {
+  background: var(--chart-bg); border: 1px solid var(--chart-edge); border-radius: 14px;
+  padding: 10px 12px; display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--fg) 4%, transparent 96%) inset, 0 10px 24px rgba(2,8,20,0.15);
+  min-height: 300px; /* Give altitude chart reasonable space */
+  flex: 1;
+}
+.chartbox-main > div:last-child { flex: 1 1 auto; min-height: 0; height: 100%; }
+
+.values-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.kv-cell, .kv-group {
+  background: var(--control-bg);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.kv-cell .k, .kv-group .k {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.kv-cell .v {
+  font-size: 22px;
+  font-weight: 700;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+.kv-group .v-group {
+  display: flex;
+  justify-content: space-between;
+  font-size: 18px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+.kv-group .v-group span {
+  font-weight: 700;
+}
+.kv-group .v-group b {
+  color: var(--accent);
+}
+
+.charttitle-wrap {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.chart-toggles {
+  display: flex;
+  gap: 6px;
+}
+.chart-toggles .btn {
+  --btn-bg-color: var(--ghost-bg);
+  background: var(--btn-bg-color);
+}
+.chart-toggles .btn.active {
+  --btn-bg-color: var(--accent);
+  background: var(--btn-bg-color);
+  color: #fff;
+}
+.chart-toggles .btn:not(.active) {
+  opacity: 0.6;
+}
+.chart-toggles .btn[data-series="Baro Alt"].active { --btn-bg-color: var(--chart-color-1); }
+.chart-toggles .btn[data-series="GPS Alt"].active { --btn-bg-color: var(--chart-color-2); }

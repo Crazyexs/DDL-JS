@@ -38,65 +38,85 @@
     </div>
   </header>
 
-  <!-- CONTROL STRIP -->
-  <section class="strip" id="strip">
-    <div class="group grow" id="healthKV">
-      <!-- Health -->
-      <div class="kv item"><div class="k">Link</div><div id="linkType" class="v big">Backend</div></div>
-      <div class="kv item"><div class="k">Port</div><div id="portName" class="v big">—</div></div>
-      <div class="kv item"><div class="k">Baud</div><div id="baudVal" class="v big">—</div></div>
-      <div class="kv item wide"><div class="k">Log File</div><div class="v" id="csvName">Flight_1043.csv</div></div>
-      <div class="kv item wide"><div class="k">Last Command</div><div class="v big" id="healthLastCmd">—</div></div>
-      <!-- Mission Status -->
-      <div class="kv-major">
-        <div class="k">State</div>
-        <div id="missionState" class="v">--</div>
+  <!-- HIGHLIGHTS STRIP -->
+  <section class="strip-highlights">
+    <div class="kv-major-large">
+      <div class="k">State</div>
+      <div id="missionState" class="v">--</div>
+    </div>
+    <div class="kv-major-large">
+      <div class="k">Altitude (m)</div>
+      <div id="liveAltitude" class="v">--</div>
+    </div>
+    <div class="kv-major">
+      <div class="k">Mode</div>
+      <div id="missionMode" class="v">--</div>
+    </div>
+    <div class="kv-major">
+      <div class="k">GPS Sats</div>
+      <div id="gpsSats" class="v">--</div>
+    </div>
+    <div class="compass-container">
+      <div class="compass">
+        <div class="compass-arrow" id="compassArrow"></div>
       </div>
-      <div class="kv-major">
-        <div class="k">Mode</div>
-        <div id="missionMode" class="v">--</div>
-      </div>
-      <div class="kv-major">
-        <div class="k">GPS Sats</div>
-        <div id="gpsSats" class="v">--</div>
-      </div>
-      <!-- Compass -->
-      <div class="compass-container">
-        <div class="compass">
-          <div class="compass-arrow" id="compassArrow"></div>
-        </div>
-        <div class="heading-text" id="heading">--°</div>
-      </div>
-       <!-- Packet Counters -->
-      <div class="kv-major">
-          <div class="k">RX Packets</div>
-          <div id="rxCount" class="v ok">0</div>
-      </div>
-      <div class="kv-major">
-          <div class="k">Lost Packets</div>
-          <div id="lossCount" class="v">0</div>
-      </div>
+      <div class="heading-text" id="heading">--°</div>
+    </div>
+    <div class="kv-major">
+        <div class="k">RX Packets</div>
+        <div id="rxCount" class="v ok">0</div>
+    </div>
+    <div class="kv-major">
+        <div class="k">Lost Packets</div>
+        <div id="lossCount" class="v">0</div>
     </div>
     <div class="group">
-        <div class="label">Actions</div>
-        <button id="btnOpenCsvFolder" class="btn sm">Open Log Folder</button>
+        <button id="btnOpenCsvFolder" class="btn sm">Log Folder</button>
         <button id="btnSim" class="btn sm">Run Sim</button>
     </div>
   </section>
 
   <!-- MAIN GRID -->
   <main class="screen">
-    <!-- GRAPHS (Left Column) -->
-    <section class="panel graphs-panel">
-      <div class="panel-title">
-        <div>TELEMETRY GRAPHS</div>
+    <!-- GRAPHS AND VALUES (Left Column) -->
+    <section class="panel values-panel">
+      <!-- Altitude Chart -->
+      <div class="chartbox-main">
+        <div class="charttitle-wrap">
+          <div class="charttitle">Altitude Profile (m)</div>
+          <div class="chart-toggles" id="altitudeToggles">
+            <button class="btn sm active" data-series="Baro Alt">Baro</button>
+            <button class="btn sm active" data-series="GPS Alt">GPS</button>
+          </div>
+        </div>
+        <div id="chart-altitude"></div>
       </div>
-      <div class="charts-grid">
-        <div class="chartbox"><div class="charttitle">Altitude (m)</div><div id="chart-altitude"></div></div>
-        <div class="chartbox"><div class="charttitle">Power (V/A)</div><div id="chart-power"></div></div>
-        <div class="chartbox"><div class="charttitle">Environment (C/kPa)</div><div id="chart-environment"></div></div>
-        <div class="chartbox"><div class="charttitle">Gyroscope (deg/s)</div><div id="chart-gyro"></div></div>
-        <div class="chartbox"><div class="charttitle">Accelerometer (m/s²)</div><div id="chart-accel"></div></div>
+      
+      <!-- Key Values Grid -->
+      <div class="panel-title">KEY VALUES</div>
+      <div class="values-grid">
+        <div class="kv-cell"><div class="k">Temperature</div><div id="val_temp" class="v">-- °C</div></div>
+        <div class="kv-cell"><div class="k">Pressure</div><div id="val_pressure" class="v">-- kPa</div></div>
+        <div class="kv-cell"><div class="k">Voltage</div><div id="val_voltage" class="v">-- V</div></div>
+        <div class="kv-cell"><div class="k">Current</div><div id="val_current" class="v">-- A</div></div>
+        
+        <div class="kv-group">
+          <div class="k">Gyro (deg/s)</div>
+          <div class="v-group">
+            <span>X: <b id="val_gyro_x">--</b></span>
+            <span>Y: <b id="val_gyro_y">--</b></span>
+            <span>Z: <b id="val_gyro_z">--</b></span>
+          </div>
+        </div>
+        
+        <div class="kv-group">
+          <div class="k">Accel (m/s²)</div>
+          <div class="v-group">
+            <span>X: <b id="val_accel_x">--</b></span>
+            <span>Y: <b id="val_accel_y">--</b></span>
+            <span>Z: <b id="val_accel_z">--</b></span>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -133,7 +153,7 @@
             <button id="refreshLogs" class="btn ghost sm">Clear Log</button>
             <label class="chk"><input type="checkbox" id="autoScroll" checked> Auto</label>
             <label class="chk"><input type="checkbox" id="freeze"> Freeze</label>
-            <label class="chk"><input type="checkbox" id="wrapLines"> Wrap</label>
+            <label class="chk"><input type="checkbox"id="wrapLines"> Wrap</label>
           </div>
           <div class="right" style="display:flex;gap:8px;align-items:center">
             <button id="copyLogs" class="btn sm">Copy Log</button>
@@ -153,20 +173,6 @@
       if(!s||!b)return;
       new MutationObserver(()=>{b.textContent=s.textContent.replace('Mission: ','')})
       .observe(s,{childList:true,characterData:true,subtree:true});
-    })();
-
-    // Theme toggle (persists)
-    (function(){
-      const root = document.documentElement;
-      const btn = document.getElementById('toggleTheme');
-      const saved = localStorage.getItem('dgs-theme');
-      if (saved === 'light' || saved === 'dark') document.documentElement.setAttribute('data-theme', saved);
-      btn?.addEventListener('click', ()=>{
-        const cur = root.getAttribute('data-theme') || 'light';
-        const next = cur === 'light' ? 'dark' : 'light';
-        root.setAttribute('data-theme', next);
-        localStorage.setItem('dgs-theme', next);
-      });
     })();
   </script>
 

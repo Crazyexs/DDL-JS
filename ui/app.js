@@ -15,6 +15,7 @@ if (!window.__DGS_BOOTED__) {
   const hms = (d = new Date()) => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   const esc = (s) => String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
   const num = (x, d = 1) => (x === undefined || x === null || isNaN(+x)) ? '—' : (+x).toFixed(d);
+  const getCssVar = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
   // ---------- state ----------
   const st = {
@@ -33,14 +34,13 @@ if (!window.__DGS_BOOTED__) {
 
   // ---------- DOM ----------
   const el = {
+    // theme
+    toggleTheme: $('#toggleTheme'),
     // clocks
     utcClock: $('#utcClock'),
     missionSmall: $('#missionTime'),
     missionBig: $('#missionTimeBig'),
     // conn
-    linkType: $('#linkType'),
-    portName: $('#portName'),
-    baudVal:  $('#baudVal'),
     connPill: $('#connPill'),
     // map + mission
     btnStartMission: $('#btnStartMission'),
@@ -51,7 +51,6 @@ if (!window.__DGS_BOOTED__) {
     // health
     rxCount: $('#rxCount'),
     lossCount: $('#lossCount'),
-    csvName: $('#csvName'),
     // logs
     rawBox: $('#rawBox'),
     logN: $('#logN'),
@@ -64,7 +63,6 @@ if (!window.__DGS_BOOTED__) {
     copyLogs: $('#copyLogs'),
     resetAll: $('#btnResetAllTop'),
     lastCmd: $('#lastCmd'),
-    healthLastCmd: $('#healthLastCmd'),
     // commands
     quick: $('#quickCmd'),
     manual: $('#manualCmd'),
@@ -72,14 +70,29 @@ if (!window.__DGS_BOOTED__) {
     // new buttons from index.html
     btnOpenCsvFolder: $('#btnOpenCsvFolder'),
     btnSim: $('#btnSim'),
-    // New Status Panel
+    
+    // New Large Displays
     missionState: $('#missionState'),
+    liveAltitude: $('#liveAltitude'),
     missionMode: $('#missionMode'),
     gpsSats: $('#gpsSats'),
-    gpsSpeed: $('#gpsSpeed'),
-    power: $('#power'),
     compassArrow: $('#compassArrow'),
     heading: $('#heading'),
+
+    // New Key Values
+    val_temp: $('#val_temp'),
+    val_pressure: $('#val_pressure'),
+    val_voltage: $('#val_voltage'),
+    val_current: $('#val_current'),
+    val_gyro_x: $('#val_gyro_x'),
+    val_gyro_y: $('#val_gyro_y'),
+    val_gyro_z: $('#val_gyro_z'),
+    val_accel_x: $('#val_accel_x'),
+    val_accel_y: $('#val_accel_y'),
+    val_accel_z: $('#val_accel_z'),
+    
+    // Chart Toggles
+    altitudeToggles: $('#altitudeToggles'),
   };
 
   // ---------- log UI ----------
@@ -106,21 +119,6 @@ if (!window.__DGS_BOOTED__) {
     if (!el.connPill) return;
     el.connPill.textContent = connected ? text : 'Disconnected';
     el.connPill.className = 'pill' + (connected ? ' ok' : '');
-  }
-
-  async function updateHealth() {
-    try {
-      const res = await fetch('/api/health');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const health = await res.json();
-      el.portName && (el.portName.textContent = health.serial?.port || '—');
-      el.baudVal && (el.baudVal.textContent = health.serial?.baud || '—');
-      if (el.csvName && health.csv) {
-          el.csvName.textContent = health.csv.split(/[\\/]/).pop();
-      }
-    } catch (e) {
-      warn(`Health check failed: ${e.message}`);
-    }
   }
 
   // ---------- clocks ----------
@@ -150,18 +148,22 @@ if (!window.__DGS_BOOTED__) {
     st.marker = L.marker([18.788, 98.985]).addTo(st.map);
   }
   
-
   // ---------- charts ----------
-  function makeMulti(elId, names, colors = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc']) {
+  function getChartColors() {
+    return [getCssVar('--chart-color-1'), getCssVar('--chart-color-2')];
+  }
+
+  function makeMulti(elId, names) {
     const elc = document.getElementById(elId);
     if (!elc) return null;
     const inst = echarts.init(elc);
+    const colors = getChartColors();
     inst.setOption({
       grid: { left: 44, right: 18, top: 38, bottom: 28 },
       animation: false,
       xAxis: { type: 'category', data: [], axisLabel: { show: false } },
-      yAxis: { type: 'value', scale: true, axisLabel: { color: 'var(--muted)'} },
-      legend: { data: names, top: 0, textStyle: { color: 'var(--fg)' } },
+      yAxis: { type: 'value', scale: true, axisLabel: { color: getCssVar('--muted')} },
+      legend: { show: false, data: names, top: 0, textStyle: { color: getCssVar('--fg') } }, // Keep legend data, but hide it
       series: names.map((n, i) => ({ type: 'line', name: n, showSymbol: false, data: [], lineStyle: { color: colors[i] } })),
       tooltip: { trigger: 'axis' }
     });
@@ -177,14 +179,46 @@ if (!window.__DGS_BOOTED__) {
     if (opt.xAxis[0].data.length > max) { opt.xAxis[0].data.shift(); opt.series.forEach(s => s.data.shift()); }
     inst.setOption(opt, false, true);
   }
+  
+  function updateChartColors() {
+    const colors = getChartColors();
+    const muted = getCssVar('--muted');
+    const fg = getCssVar('--fg');
+    
+    for (const chart of Object.values(st.charts)) {
+      if (!chart) continue;
+      chart.setOption({
+        yAxis: { axisLabel: { color: muted } },
+        legend: { textStyle: { color: fg } },
+        series: chart.getOption().series.map((s, i) => ({
+          name: s.name,
+          lineStyle: { color: colors[i] }
+        }))
+      });
+    }
+  }
 
   function initCharts() {
     st.charts.altitude = makeMulti('chart-altitude', ['Baro Alt', 'GPS Alt']);
-    st.charts.power = makeMulti('chart-power', ['Voltage', 'Current']);
-    st.charts.environment = makeMulti('chart-environment', ['Temp', 'Pressure']);
-    st.charts.gyro = makeMulti('chart-gyro', ['X', 'Y', 'Z']);
-    st.charts.accel = makeMulti('chart-accel', ['X', 'Y', 'Z']);
   }
+  
+  function initChartToggles() {
+    el.altitudeToggles?.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      
+      const seriesName = btn.dataset.series;
+      if (!seriesName) return;
+      
+      btn.classList.toggle('active');
+      
+      st.charts.altitude?.dispatchAction({
+        type: 'legendToggleSelect',
+        name: seriesName
+      });
+    });
+  }
+
   window.addEventListener('resize', () => {
     Object.values(st.charts).forEach(c => c?.resize());
     st.map?.invalidateSize();
@@ -201,35 +235,48 @@ if (!window.__DGS_BOOTED__) {
     // This function is the main entry point for new telemetry data from the backend
     if (el.freeze?.checked) return;
 
-    // Status Panel
+    // ----- Big Displays -----
     el.missionState && (el.missionState.textContent = t.state || '—');
+    el.liveAltitude && (el.liveAltitude.textContent = num(t.altitude_m, 1));
+    
+    // ----- Strip Displays -----
     el.missionMode && (el.missionMode.textContent = t.mode || '—');
     el.gpsSats && (el.gpsSats.textContent = t.gps_sats ?? '—');
     updateCompass(t.heading);
 
-    // counters from backend
+    // ----- Key Value Panel -----
+    el.val_temp && (el.val_temp.textContent = `${num(t.temperature_c, 1)} °C`);
+    el.val_pressure && (el.val_pressure.textContent = `${num(t.pressure_kpa, 2)} kPa`);
+    el.val_voltage && (el.val_voltage.textContent = `${num(t.voltage_v, 2)} V`);
+    el.val_current && (el.val_current.textContent = `${num(t.current_a, 3)} A`);
+    
+    el.val_gyro_x && (el.val_gyro_x.textContent = num(t.gyro_r_dps, 2));
+    el.val_gyro_y && (el.val_gyro_y.textContent = num(t.gyro_p_dps, 2));
+    el.val_gyro_z && (el.val_gyro_z.textContent = num(t.gyro_y_dps, 2));
+    
+    el.val_accel_x && (el.val_accel_x.textContent = num(t.accel_r_dps2, 2));
+    el.val_accel_y && (el.val_accel_y.textContent = num(t.accel_p_dps2, 2));
+    el.val_accel_z && (el.val_accel_z.textContent = num(t.accel_y_dps2, 2));
+
+
+    // ----- Counters -----
     el.rxCount && (el.rxCount.textContent = t.gs_rx_count);
     el.lossCount && (el.lossCount.textContent = t.gs_loss_total);
 
-    // time
+    // ----- Time & State Tracking -----
     if (t.gps_time && /^\d\d:\d\d:\d\d$/.test(t.gps_time)) st.lastGPSHMS = t.gps_time;
     if (typeof t.altitude_m === 'number') st.lastAlt = t.altitude_m;
 
-    // command echo
+    // ----- Command Echo -----
     if (t.cmd_echo) {
       el.lastCmd && (el.lastCmd.textContent = t.cmd_echo);
-      el.healthLastCmd && (el.healthLastCmd.textContent = t.cmd_echo);
     }
 
-    // charts
+    // ----- Chart -----
     const label = t.mission_time || hms();
     pushChart(st.charts.altitude, label, [t.altitude_m, t.gps_altitude_m]);
-    pushChart(st.charts.power, label, [t.voltage_v, t.current_a]);
-    pushChart(st.charts.environment, label, [t.temperature_c, t.pressure_kpa]);
-    pushChart(st.charts.gyro, label, [t.gyro_r_dps, t.gyro_p_dps, t.gyro_y_dps]);
-    pushChart(st.charts.accel, label, [t.accel_r_dps2, t.accel_p_dps2, t.accel_y_dps2]);
 
-    // map
+    // ----- Map -----
     if (t.gps_lat && t.gps_lon && typeof t.gps_lat === 'number' && typeof t.gps_lon === 'number') {
       const pos = [t.gps_lat, t.gps_lon];
       st.marker?.setLatLng(pos);
@@ -238,7 +285,7 @@ if (!window.__DGS_BOOTED__) {
       el.gmapA && (el.gmapA.href = `https://maps.google.com/?q=${t.gps_lat},${t.gps_lon}`);
     }
 
-    // Render a summary line in the log
+    // ----- Log Summary Line -----
     const wrapIsOn = el.wrap?.checked;
     let logText;
     if (wrapIsOn && t.gs_raw_line) {
@@ -376,7 +423,6 @@ if (!window.__DGS_BOOTED__) {
 
     // Immediate UI Update for remote commands
     el.lastCmd.textContent = cmd;
-    el.healthLastCmd.textContent = cmd;
     cmdEcho('> ' + cmd); // Optimistic echo to log
 
     try {
@@ -409,7 +455,6 @@ if (!window.__DGS_BOOTED__) {
     st.ws.onopen = () => {
       info('Backend connected.');
       setPill(true, 'Connected');
-      updateHealth();
     };
 
     st.ws.onmessage = (ev) => {
@@ -458,12 +503,31 @@ if (!window.__DGS_BOOTED__) {
           err(`Could not start sim: ${e.message}`);
       }
   });
+  
+  // ---------- Theme ----------
+  function initTheme() {
+    const root = document.documentElement;
+    const saved = localStorage.getItem('dgs-theme');
+    if (saved === 'light' || saved === 'dark') {
+      root.setAttribute('data-theme', saved);
+    }
+    
+    el.toggleTheme?.addEventListener('click', ()=>{
+      const cur = root.getAttribute('data-theme') || 'light';
+      const next = cur === 'light' ? 'dark' : 'light';
+      root.setAttribute('data-theme', next);
+      localStorage.setItem('dgs-theme', next);
+      updateChartColors();
+    });
+  }
 
   // ---------- init ----------
   function init() {
     initMap();
     initCharts();
+    initChartToggles();
     fillCmds();
+    initTheme();
     info('DAEDALUS Ground Station Initialized.');
     connect();
   }
