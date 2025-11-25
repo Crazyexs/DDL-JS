@@ -1,3 +1,4 @@
-__pycache__
-assets/daedalus-logo.png
-.vscode/
+/__pycache__
+/.vscode/
+/logs/ground.log
+/data/FlightData_1043.csv
