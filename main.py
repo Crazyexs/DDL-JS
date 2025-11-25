@@ -1,5 +1,7 @@
 import uvicorn
 import socket
+import random
+import math
 
 # main.py — DAEDALUS GS (Consolidated, clean)
 
@@ -33,7 +35,7 @@ USE_SERVER_SERIAL = True       # True = backend อ่าน/เขียน ser
 
 # โฟลเดอร์หลัก
 ROOT_DIR = Path(__file__).resolve().parent
-DATA_DIR = Path(r"C:\Users\Admin\Downloads\DDL-JS\data")  # ตามที่ผู้ใช้ระบุ
+DATA_DIR = Path(r"C:\Users\Admin\Downloads\DDL-JS\data")  # เปลี่ยนตามpathที่อยากเก็บเด้อ!!!!!!
 LOG_DIR = ROOT_DIR / "logs"
 UI_DIR = ROOT_DIR / "ui"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -160,7 +162,7 @@ class LineReader(asyncio.Protocol):
 async def open_serial():
     while True:
         try:
-            # โปรดทราบ: ต้องมี pyserial-asyncio ติดตั้งอยู่
+            # ต้องมี pyserial-asyncio โหลดจากrequirements.txt!
             await serial_asyncio.create_serial_connection(
                 asyncio.get_running_loop(), LineReader, state.cfg.port, baudrate=state.cfg.baud
             )
@@ -290,7 +292,100 @@ async def sim_sender(file_path: Path):
     log_json(event="sim_complete", file=str(file_path))
 
 # ===================== FASTAPI APP =====================
+# ===================== DUMMY DATA (for testing) =====================
+dummy_task: Optional[asyncio.Task] = None
+dummy_state = {
+    "packet": 0,
+    "lat": 18.788,
+    "lon": 98.985,
+    "last_alt": 0.0,
+}
+
+def hms_from_seconds(s: float) -> str:
+    s = int(s)
+    hours = s // 3600
+    minutes = (s % 3600) // 60
+    seconds = s % 60
+    return f"{hours:02}:{minutes:02}:{seconds:02}"
+
+def generate_dummy_telemetry_line() -> str:
+    dummy_state["packet"] += 1
+    pkt = dummy_state["packet"]
+    
+    dummy_state["lat"] += (random.random() - 0.5) * 0.0002
+    dummy_state["lon"] += (random.random() - 0.5) * 0.0002
+    
+    altitude = 150 + math.sin(pkt / 30) * 120 + (random.random() - 0.5) * 5
+    temp = 25 - (altitude / 100)
+    voltage = 12.6 - (pkt / 500)
+    current = 0.5 + (random.random() - 0.5) * 0.2
+    
+    mission_time = hms_from_seconds(pkt) # Simple mission time based on packet count
+    
+    state = 'LAUNCH_PAD'
+    if altitude > 20:
+        if altitude > dummy_state["last_alt"]:
+            state = 'ASCENT'
+        else:
+            state = 'DESCENT'
+    dummy_state["last_alt"] = altitude
+
+    line = [
+        str(TEAM_ID),
+        mission_time,
+        str(pkt),
+        'F', # Mode
+        state,
+        f"{altitude:.2f}",
+        f"{temp:.2f}",
+        f"{101.325 * math.pow(1 - 2.25577e-5 * altitude, 5.25588):.3f}", # Pressure
+        f"{voltage:.2f}",
+        f"{current:.3f}",
+        f"{(random.random() - 0.5) * 20:.3f}", # Gyro R
+        f"{(random.random() - 0.5) * 20:.3f}", # Gyro P
+        f"{180 + (random.random() - 0.5) * 40:.3f}", # Gyro Y
+        f"{(random.random() - 0.5) * 2:.3f}", # Accel R
+        f"{(random.random() - 0.5) * 2:.3f}", # Accel P
+        f"{9.8 + (random.random() - 0.5):.3f}", # Accel Y
+        datetime.now(timezone.utc).strftime("%H:%M:%S"), # GPS Time
+        f"{altitude + 10:.2f}", # GPS Alt
+        f"{dummy_state['lat']:.4f}",
+        f"{dummy_state['lon']:.4f}",
+        str(random.randint(8, 12)), # GPS Sats
+        "CMD_OK" if pkt % 10 != 0 else "CX,ON",
+        f"{(pkt * 5) % 360:.2f}", # Heading
+    ]
+    return ",".join(line)
+
+async def dummy_data_sender():
+    log_json(event="dummy_data_started")
+    while True:
+        line = generate_dummy_telemetry_line()
+        await handle_telemetry_line(line)
+        await asyncio.sleep(1)
+
+
 app = FastAPI(title="CanSat Ground Station (Python)")
+
+@app.post("/api/dummy/start")
+async def api_dummy_start():
+    global dummy_task
+    if dummy_task and not dummy_task.done():
+        return {"ok": False, "message": "Dummy task already running"}
+    dummy_state["packet"] = 0
+    dummy_task = asyncio.create_task(dummy_data_sender())
+    return {"ok": True}
+
+@app.post("/api/dummy/stop")
+async def api_dummy_stop():
+    global dummy_task
+    if dummy_task and not dummy_task.done():
+        dummy_task.cancel()
+        log_json(event="dummy_data_stopped")
+        return {"ok": True}
+    return {"ok": False, "message": "Dummy task not running"}
+
+# ===================== FASTAPI APP =====================
 
 # ---- Health / Logs ----
 @app.get("/api/health")

@@ -331,72 +331,6 @@ if (!window.__DGS_BOOTED__) {
     QUICK_COMMANDS.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; el.quick.append(o); });
   }
 
-  function makeDummyTelemetry() {
-    st.dummy.packet += 1;
-    st.dummy.lat += (Math.random() - 0.5) * 0.0002;
-    st.dummy.lon += (Math.random() - 0.5) * 0.0002;
-    const altitude = 150 + Math.sin(st.dummy.packet / 30) * 120 + (Math.random() - 0.5) * 5;
-    const temp = 25 - (altitude / 100);
-    const voltage = 12.6 - (st.dummy.packet / 500);
-    const current = 0.5 + (Math.random() - 0.5) * 0.2;
-
-    const t = {
-      team_id: st.teamId,
-      mission_time: hms(new Date(Date.now() - (st.t0 ? (Date.now() - st.t0) : 0) + (st.dummy.packet * 1000))),
-      packet_count: st.dummy.packet,
-      mode: 'F',
-      state: altitude < 20 ? 'LAUNCH_PAD' : (st.lastAlt < altitude) ? 'ASCENT' : 'DESCENT',
-      altitude_m: altitude,
-      temperature_c: temp,
-      pressure_kpa: 101.325 * Math.pow(1 - 2.25577e-5 * altitude, 5.25588),
-      voltage_v: voltage,
-      current_a: current,
-      gyro_r_dps: (Math.random() - 0.5) * 20,
-      gyro_p_dps: (Math.random() - 0.5) * 20,
-      gyro_y_dps: 180 + (Math.random() - 0.5) * 40,
-      accel_r_dps2: (Math.random() - 0.5) * 2,
-      accel_p_dps2: (Math.random() - 0.5) * 2,
-      accel_y_dps2: 9.8 + (Math.random() - 0.5),
-      gps_time: hms(),
-      gps_altitude_m: altitude + 10,
-      gps_lat: st.dummy.lat,
-      gps_lon: st.dummy.lon,
-      gps_sats: 8 + Math.floor(Math.random() * 4),
-      cmd_echo: st.dummy.packet % 10 === 0 ? 'CX,ON' : 'CMD_OK',
-      heading: (st.dummy.packet * 5) % 360,
-      gs_ts_utc: new Date().toISOString(),
-      gs_rx_count: st.dummy.packet,
-      gs_loss_total: Math.floor(st.dummy.packet / 100),
-    };
-    
-    // Reconstruct the CSV line for logging
-    t.gs_raw_line = [
-      t.team_id, t.mission_time, t.packet_count, t.mode, t.state,
-      num(t.altitude_m, 2), num(t.temperature_c, 2), num(t.pressure_kpa, 3),
-      num(t.voltage_v, 2), num(t.current_a, 3),
-      num(t.gyro_r_dps, 3), num(t.gyro_p_dps, 3), num(t.gyro_y_dps, 3),
-      num(t.accel_r_dps2, 3), num(t.accel_p_dps2, 3), num(t.accel_y_dps2, 3),
-      t.gps_time, num(t.gps_altitude_m, 2), num(t.gps_lat, 4), num(t.gps_lon, 4),
-      t.gps_sats, t.cmd_echo, num(t.heading, 2)
-    ].join(',');
-
-    onTelemetry(t);
-  }
-
-  function startDummy() {
-    if (st.dummy.id) return;
-    info('Dummy data started. Sends 1 packet/sec.');
-    st.dummy.packet = 0;
-    st.dummy.id = setInterval(makeDummyTelemetry, 1000);
-  }
-
-  function stopDummy() {
-    if (!st.dummy.id) return;
-    info('Dummy data stopped.');
-    clearInterval(st.dummy.id);
-    st.dummy.id = null;
-  }
-
   async function sendCommand(cmdStr) {
     const cmd = cmdStr.trim();
     if (!cmd) return;
@@ -405,11 +339,13 @@ if (!window.__DGS_BOOTED__) {
     if (cmd.startsWith('/')) {
         const command = cmd.toLowerCase();
         if (command === '/dummy.on') {
-            startDummy();
+            fetch('/api/dummy/start', {method: 'POST'});
+            info('Requesting dummy data from server...');
             return;
         }
         if (command === '/dummy.off') {
-            stopDummy();
+            fetch('/api/dummy/stop', {method: 'POST'});
+            info('Stopping dummy data on server...');
             return;
         }
         if (command === '/clear') {

@@ -100,7 +100,7 @@ a { color: var(--accent); text-decoration: none; }
   flex-shrink: 0; /* Prevent topbar from shrinking */
 }
 .brandwrap { display: flex; gap: 10px; align-items: center; }
-.logo { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--edge); background: var(--control-bg); }
+.logo { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--edge); background: var(--control-bg); background-image: url(/assets/daedalus.png); background-size: contain; background-position: center; background-repeat: no-repeat; }
 .brand { font-size: 16px; font-weight: 900; letter-spacing: .5px; }
 .tag { opacity: .9; }
 .sub { font-size: 13px; color: var(--muted); }
