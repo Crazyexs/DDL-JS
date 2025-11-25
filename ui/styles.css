@@ -242,18 +242,56 @@ a { color: var(--accent); text-decoration: none; }
 .jump-live[hidden] { display: none; }
 
 /* Responsive */
-@media (max-width: 1200px) {
-  .screen { grid-template-columns: 1fr; grid-template-rows: auto; }
-  .values-panel,
-  .graphs-panel { grid-column: 1; grid-row: 1; }
-  .map-panel { grid-column: 1; grid-row: 2; }
-  .logs-panel { grid-column: 1; grid-row: 3; }
-  body { overflow: auto; }
-  .rawbox { height: 220px; }
-}
-@media (max-width: 700px) {
-  .charts-grid { grid-template-columns: 1fr; }
-  .rawbox { height: 200px; }
+@media (max-width: 768px) {
+  body {
+    overflow: auto; /* Allow scrolling on mobile */
+  }
+  .screen {
+    display: flex;
+    flex-direction: column;
+    padding: 5px;
+    gap: 5px;
+  }
+
+  .map-panel {
+    order: 1; /* Show map first */
+  }
+
+  .values-panel {
+    order: 2;
+  }
+
+  .logs-panel {
+    order: 3;
+    display: none; /* Hide logs by default on mobile */
+  }
+
+  .map {
+    height: 40vh; /* Make map taller on mobile */
+  }
+  
+  .strip-highlights,
+  .top-clocks,
+  .brand .tag,
+  .brand .sub,
+  .missionbar .btn.ghost {
+    display: none; /* Hide non-essential elements */
+  }
+
+  .values-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .kv-major-large .v {
+    font-size: 28px;
+  }
+
+  .kv-cell .v {
+    font-size: 18px;
+  }
+  .kv-group .v-group {
+    font-size: 16px;
+  }
 }
 
 /* SUNLIGHT BOOST (optional utility for extreme glare conditions)
@@ -441,3 +479,47 @@ a { color: var(--accent); text-decoration: none; }
 }
 .chart-toggles .btn[data-series="Baro Alt"].active { --btn-bg-color: var(--chart-color-1); }
 .chart-toggles .btn[data-series="GPS Alt"].active { --btn-bg-color: var(--chart-color-2); }
+
+@media (max-width: 768px) {
+  .screen {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    padding: 5px;
+  }
+
+  .values-panel, .map-panel, .logs-panel {
+    grid-column: 1;
+  }
+
+  .map-panel {
+    grid-row: 1;
+  }
+
+  .values-panel {
+    grid-row: 2;
+  }
+
+  .logs-panel {
+    grid-row: 3;
+  }
+  
+  .map {
+    height: 300px;
+  }
+
+  .kv-major-large .v {
+    font-size: 48px;
+  }
+
+  .strip-highlights {
+    display: none;
+  }
+
+  .top-clocks {
+    display: none;
+  }
+
+  .brand .tag, .brand .sub {
+    display: none;
+  }
+}

@@ -1,3 +1,6 @@
+import uvicorn
+import socket
+
 # main.py — DAEDALUS GS (Consolidated, clean)
 
 import os
@@ -196,6 +199,7 @@ def now_utc_iso() -> str:
 async def broadcast_ws(payload: dict):
     text = json.dumps(payload)
     dead = []
+    log_json(event="ws_broadcast", clients=[f"{ws.client.host}:{ws.client.port}" for ws in ws_clients])
     for ws in list(ws_clients):
         try:
             await ws.send_text(text)
@@ -413,6 +417,7 @@ async def api_csv_save_now(payload: dict = Body(...)):
 async def ws_telemetry(ws: WebSocket):
     await ws.accept()
     ws_clients.add(ws)
+    log_json(event="ws_connected", client=f"{ws.client.host}:{ws.client.port}")
     try:
         while True:
             await ws.receive_text()   # no-op; แค่ detect disconnect
@@ -420,6 +425,7 @@ async def ws_telemetry(ws: WebSocket):
         pass
     finally:
         ws_clients.discard(ws)
+        log_json(event="ws_disconnected", client=f"{ws.client.host}:{ws.client.port}")
 
 # ---- Static UI (same origin) ----
 app.mount("/", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
@@ -432,7 +438,36 @@ async def _startup():
     if USE_SERVER_SERIAL:
         asyncio.create_task(serial_reader_manager())
         asyncio.create_task(serial_writer_worker())
+    
+    async def ws_ping():
+        while True:
+            await asyncio.sleep(10)
+            await broadcast_ws({"type": "ping"})
+            
+    asyncio.create_task(ws_ping())
 
 @app.on_event("shutdown")
 async def _shutdown():
     log_json(event="shutdown")
+
+if __name__ == "__main__":
+    host = "0.0.0.0"
+    port = 8000
+
+    # Get local IP address
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+    except Exception:
+        local_ip = "127.0.0.1"
+    finally:
+        s.close()
+
+    print("="*50)
+    print("Daedalus Ground Station")
+    print(f"Access the UI from this computer at: http://localhost:{port}")
+    print(f"Access the UI from other devices on the same network at: http://{local_ip}:{port}")
+    print("="*50)
+
+    uvicorn.run(app, host=host, port=port)

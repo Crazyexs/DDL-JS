@@ -462,7 +462,7 @@ if (!window.__DGS_BOOTED__) {
         const data = JSON.parse(ev.data);
         if (data.type === 'error') {
           err(data.message || 'Received an unknown error from backend.');
-        } else {
+        } else if (data.type !== 'ping') {
           onTelemetry(data);
         }
       } catch (e) {
@@ -478,7 +478,8 @@ if (!window.__DGS_BOOTED__) {
     };
 
     st.ws.onerror = (e) => {
-      err('WebSocket error.');
+      err('WebSocket error. Check browser console for details.');
+      console.error('WebSocket error:', e);
       st.ws?.close();
     };
   }
