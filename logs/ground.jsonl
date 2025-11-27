@@ -1,227 +1,32 @@
 {"event": "startup", "team": 1043, "server_serial": true}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
+{"event": "serial_thread_start"}
+{"event": "serial_connecting", "port": "COM3", "baud": 115200}
+{"event": "serial_connected", "port": "COM3"}
 {"event": "ws_broadcast", "clients": []}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
 {"event": "ws_broadcast", "clients": []}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_connected", "client": "127.0.0.1:3063"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_broadcast", "clients": ["127.0.0.1:3063"]}
-{"level": "warn", "event": "serial_open_failed", "port": "COM5", "baud": 115200, "error": "could not open port 'COM5': FileNotFoundError(2, 'The system cannot find the file specified.', None, 2)"}
-{"event": "ws_disconnected", "client": "127.0.0.1:3063"}
+{"event": "ws_broadcast", "clients": []}
+{"event": "ws_broadcast", "clients": []}
+{"event": "ws_broadcast", "clients": []}
+{"event": "ws_broadcast", "clients": []}
+{"event": "ws_broadcast", "clients": []}
+{"event": "ws_connected", "client": "127.0.0.1:58036"}
+{"event": "ws_broadcast", "clients": ["127.0.0.1:58036"]}
+{"event": "ws_disconnected", "client": "127.0.0.1:58036"}
 {"event": "shutdown"}
+{"event": "serial_thread_stop"}
+{"event": "startup", "team": 1043, "server_serial": true}
+{"event": "serial_thread_start"}
+{"event": "serial_connecting", "port": "COM3", "baud": 115200}
+{"event": "serial_connected", "port": "COM3"}
+{"event": "ws_connected", "client": "127.0.0.1:46844"}
+{"level": "warn", "event": "telemetry_short", "len": 9}
+{"event": "ws_broadcast", "clients": ["127.0.0.1:46844"]}
+{"level": "warn", "event": "telemetry_short", "len": 9}
+{"level": "warn", "event": "telemetry_short", "len": 9}
+{"level": "warn", "event": "telemetry_short", "len": 9}
+{"level": "warn", "event": "telemetry_short", "len": 9}
+{"level": "warn", "event": "telemetry_short", "len": 9}
+{"event": "ws_broadcast", "clients": ["127.0.0.1:46844"]}
+{"event": "ws_disconnected", "client": "127.0.0.1:46844"}
+{"event": "shutdown"}
+{"event": "serial_thread_stop"}

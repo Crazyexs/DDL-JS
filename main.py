@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Deque, Optional, Set, List
 
 import serial
+from serial import SerialException
 import serial.tools.list_ports
 import serial_asyncio
 
@@ -29,13 +30,13 @@ from datetime import datetime, timezone
 
 # ===================== CONFIG =====================
 TEAM_ID = 1043
-DEFAULT_PORT = "COM5"          # Linux: "/dev/ttyUSB0"; macOS: "/dev/tty.usbserial-XXXX"
+DEFAULT_PORT = "COM3"          # Linux: "/dev/ttyUSB0"; macOS: "/dev/tty.usbserial-XXXX"
 DEFAULT_BAUD = 115200
 USE_SERVER_SERIAL = True       # True = backend อ่าน/เขียน serial; False = เฉพาะ WebSerial ฝั่ง browser
 
 # โฟลเดอร์หลัก
 ROOT_DIR = Path(__file__).resolve().parent
-DATA_DIR = Path(r"C:\Users\Admin\Downloads\DDL-JS\data")  # เปลี่ยนตามpathที่อยากเก็บเด้อ!!!!!!
+DATA_DIR = ROOT_DIR / "data"
 LOG_DIR = ROOT_DIR / "logs"
 UI_DIR = ROOT_DIR / "ui"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -49,7 +50,7 @@ BAUD_PRESETS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 92160
 
 CSV_HEADER = (
     "TEAM_ID,MISSION_TIME,PACKET_COUNT,MODE,STATE,ALTITUDE,TEMPERATURE,PRESSURE,VOLTAGE,CURRENT,"
-    "GYRO_R,GYRO_P,GYRO_Y,ACCEL_R,ACCEL_P,ACCEL_Y,GPS_TIME,GPS_ALTITUDE,GPS_LATITUDE,GPS_LONGITUDE,GPS_SATS,CMD_ECHO,"
+    "GYRO_R,GYRO_P,GYRO_Y,ACCEL_R,ACCEL_P,ACCEL_Y,GPS_TIME,GPS_ALTITUDE,GPS_LATITUDE,GPS_LONGITUDE,GPS_SATS,CMD_ECHO,,"
     "HEADING"
 )
 
@@ -136,63 +137,119 @@ def ensure_csv_header():
 
 ensure_csv_header()
 
-# ===================== SERIAL (server-side) =====================
-class LineReader(asyncio.Protocol):
-    def __init__(self):
-        self.buf = bytearray()
+# ===================== SERIAL (Threaded/Blocking for Windows Stability) =====================
+import threading
+import time
 
-    def connection_made(self, transport):
-        global _serial_transport
-        _serial_transport = transport
-        log_json(event="serial_connected", port=state.cfg.port, baud=state.cfg.baud)
+# Shared serial object (protected by logic, single writer)
+_serial_port: Optional[serial.Serial] = None
+_serial_lock = threading.Lock()
+_stop_event = threading.Event()
 
-    def data_received(self, data: bytes):
-        self.buf.extend(data)
-        while b'\n' in self.buf:
-            line, _, rest = self.buf.partition(b'\n')
-            self.buf = bytearray(rest)
-            s = line.decode(errors="ignore").rstrip("\r")
-            asyncio.create_task(handle_telemetry_line(s))
+def serial_read_thread_target(loop):
+    """
+    Runs in a separate thread.
+    1. Tries to open serial port.
+    2. Reads lines in a blocking loop.
+    3. Dispatches lines to the main asyncio loop.
+    """
+    global _serial_port
+    
+    log_json(event="serial_thread_start")
 
-    def connection_lost(self, exc):
-        global _serial_transport
-        log_json(event="serial_disconnected", reason=str(exc) if exc else "EOF")
-        _serial_transport = None
+    while not _stop_event.is_set():
+        # 1. Connect
+        if _serial_port is None:
+            try:
+                # Only check availability occasionally to avoid spam
+                available_ports = [p.device for p in serial.tools.list_ports.comports()]
+                if state.cfg.port not in available_ports:
+                    log_json(level="error", event="port_not_found", port=state.cfg.port, available=available_ports)
+                    time.sleep(5)
+                    continue
 
-async def open_serial():
-    while True:
+                log_json(event="serial_connecting", port=state.cfg.port, baud=state.cfg.baud)
+                ser = serial.Serial(state.cfg.port, state.cfg.baud, timeout=1)
+                with _serial_lock:
+                    _serial_port = ser
+                log_json(event="serial_connected", port=state.cfg.port)
+            except SerialException as e:
+                msg = str(e)
+                if "Access is denied" in msg:
+                    print(f"\n[!!!] SERIAL ERROR: Access Denied on {state.cfg.port}. Close other apps (VSCode, CoolTerm)!\n")
+                log_json(level="warn", event="serial_open_failed", port=state.cfg.port, error=msg)
+                time.sleep(2)
+                continue
+            except Exception as e:
+                log_json(level="warn", event="serial_open_failed", port=state.cfg.port, error=str(e))
+                time.sleep(2)
+                continue
+
+        # 2. Read Loop
         try:
-            # ต้องมี pyserial-asyncio โหลดจากrequirements.txt!
-            await serial_asyncio.create_serial_connection(
-                asyncio.get_running_loop(), LineReader, state.cfg.port, baudrate=state.cfg.baud
-            )
-            return
-        except Exception as e:
-            log_json(level="warn", event="serial_open_failed", port=state.cfg.port, baud=state.cfg.baud, error=str(e))
-            await asyncio.sleep(2)
+            if _serial_port and _serial_port.is_open:
+                # Blocking read (timeout=1 allows checking _stop_event)
+                line_bytes = _serial_port.readline()
+                if line_bytes:
+                    try:
+                        line = line_bytes.decode(errors="ignore").rstrip("\r\n")
+                        if line:
+                            # Dispatch to main loop
+                            asyncio.run_coroutine_threadsafe(handle_telemetry_line(line), loop)
+                    except Exception:
+                        pass
+            else:
+                # Should not happen if logic is correct, but safety net
+                with _serial_lock:
+                    _serial_port = None
+                time.sleep(1)
 
-async def serial_reader_manager():
-    while True:
-        await open_serial()
-        while _serial_transport is not None:
-            await asyncio.sleep(0.5)
+        except Exception as e:
+            log_json(level="error", event="serial_read_error", error=str(e))
+            with _serial_lock:
+                if _serial_port:
+                    try:
+                        _serial_port.close()
+                    except: 
+                        pass
+                    _serial_port = None
+            time.sleep(1)
+
+    # Cleanup on exit
+    with _serial_lock:
+        if _serial_port:
+            _serial_port.close()
+    log_json(event="serial_thread_stop")
 
 async def serial_writer_worker():
+    """
+    Async task that pulls from uplink_q and writes to the serial port
+    using the shared _serial_port object (thread-safe write).
+    """
     while True:
         cmd = await uplink_q.get()
-        data = (cmd + "\r\n").encode()
-        async with _serial_writer_lock:
-            if _serial_transport is None:
-                log_json(level="warn", event="uplink_dropped_cmd_no_serial", cmd=cmd)
-                await broadcast_ws({"type": "error", "message": f"UPLINK FAILED for '{cmd}': No serial port."})
+        try:
+            data = (cmd + "\r\n").encode()
+            
+            # Write is fast, but we use the lock to ensure the port doesn't vanish mid-write
+            # or conflict if we had multiple writers (we don't, but safety first)
+            wrote = False
+            with _serial_lock:
+                if _serial_port and _serial_port.is_open:
+                    _serial_port.write(data)
+                    _serial_port.flush()
+                    wrote = True
+            
+            if wrote:
+                log_json(subsystem="uplink", sent=cmd)
+                ring.append(json.dumps({"uplink": cmd}))
             else:
-                try:
-                    _serial_transport.write(data)
-                    log_json(subsystem="uplink", sent=cmd)
-                    ring.append(json.dumps({"uplink": cmd}))
-                except Exception as e:
-                    log_json(level="error", event="serial_write_error", error=str(e), cmd=cmd)
-                    await broadcast_ws({"type": "error", "message": f"UPLINK FAILED for '{cmd}': {e}"})
+                log_json(level="warn", event="uplink_dropped_no_serial", cmd=cmd)
+                await broadcast_ws({"type": "error", "message": f"UPLINK FAILED: Serial not connected."})
+
+        except Exception as e:
+            log_json(level="error", event="uplink_error", error=str(e), cmd=cmd)
+            await broadcast_ws({"type": "error", "message": f"UPLINK ERROR: {e}"})
 
 # ===================== TELEMETRY PIPELINE =====================
 def now_utc_iso() -> str:
@@ -201,7 +258,17 @@ def now_utc_iso() -> str:
 async def broadcast_ws(payload: dict):
     text = json.dumps(payload)
     dead = []
-    log_json(event="ws_broadcast", clients=[f"{ws.client.host}:{ws.client.port}" for ws in ws_clients])
+    
+    # Safe client list generation
+    client_list = []
+    for ws in ws_clients:
+        c = ws.client
+        if c:
+            client_list.append(f"{c.host}:{c.port}")
+        else:
+            client_list.append("unknown")
+            
+    log_json(event="ws_broadcast", clients=client_list)
     for ws in list(ws_clients):
         try:
             await ws.send_text(text)
@@ -217,22 +284,7 @@ async def handle_telemetry_line(raw: str):
         log_json(level="warn", event="telemetry_short", len=len(parts))
         return
 
-    # 1) append exact row to CSV
-    if state.csv_ready:
-        with CSV_CURRENT.open("a", encoding="utf-8", newline="") as f:
-            f.write(raw + "\r\n")
-
-    # 2) counters
-    state.rx_count += 1
-    try:
-        pkt = int(parts[2])
-    except Exception:
-        pkt = 0
-    if state.last_pkt is not None and pkt > state.last_pkt + 1:
-        state.loss_count += (pkt - state.last_pkt - 1)
-    state.last_pkt = pkt
-
-    # 3) build JSON for clients
+    # 1) Parse first to ensure validity before logging
     s_f = lambda i, d=0.0: float(parts[i]) if len(parts) > i and parts[i] else d
     s_i = lambda i, d=0: int(parts[i]) if len(parts) > i and parts[i] else d
     s_s = lambda i, d='': str(parts[i]) if len(parts) > i and parts[i] else d
@@ -264,11 +316,41 @@ async def handle_telemetry_line(raw: str):
         heading=s_f(22),
         # Ground station calculated fields
         gs_ts_utc=now_utc_iso(),
-        gs_rx_count=state.rx_count,
+        gs_rx_count=state.rx_count + 1, # Increment before creation
         gs_loss_total=state.loss_count
     )
+
+    # 2) Reconstruct CLEAN CSV line for logging (Rule G2 compliance)
+    # We use the parsed values to ensure format uniformity (no random spaces, correct decimal places)
+    # Note the double comma before HEADING to satisfy "Optional Data" spec
+    clean_csv = (
+        f"{tel.team_id},{tel.mission_time},{tel.packet_count},{tel.mode},{tel.state},"
+        f"{tel.altitude_m:.2f},{tel.temperature_c:.1f},{tel.pressure_kpa:.2f},"
+        f"{tel.voltage_v:.2f},{tel.current_a:.2f},"
+        f"{tel.gyro_r_dps:.2f},{tel.gyro_p_dps:.2f},{tel.gyro_y_dps:.2f},"
+        f"{tel.accel_r_dps2:.2f},{tel.accel_p_dps2:.2f},{tel.accel_y_dps2:.2f},"
+        f"{tel.gps_time},{tel.gps_altitude_m:.2f},{tel.gps_lat:.5f},{tel.gps_lon:.5f},{tel.gps_sats},"
+        f"{tel.cmd_echo},,{tel.heading if tel.heading is not None else ''}"
+    )
+
+    # 3) append CLEAN row to CSV
+    if state.csv_ready:
+        with CSV_CURRENT.open("a", encoding="utf-8", newline="") as f:
+            f.write(clean_csv + "\r\n")
+
+    # 4) counters
+    state.rx_count += 1
+    try:
+        pkt = int(parts[2])
+    except Exception:
+        pkt = 0
+    if state.last_pkt is not None and pkt > state.last_pkt + 1:
+        state.loss_count += (pkt - state.last_pkt - 1)
+    state.last_pkt = pkt
+
+    # 5) build JSON for clients
     payload = tel.dict()
-    payload['gs_raw_line'] = raw
+    payload['gs_raw_line'] = raw # Still send raw to UI for debugging if needed
     await broadcast_ws(payload)
     ring.append(json.dumps({"telemetry": payload}))
 
@@ -291,7 +373,6 @@ async def sim_sender(file_path: Path):
             await asyncio.sleep(1.0)
     log_json(event="sim_complete", file=str(file_path))
 
-# ===================== FASTAPI APP =====================
 # ===================== DUMMY DATA (for testing) =====================
 dummy_task: Optional[asyncio.Task] = None
 dummy_state = {
@@ -365,7 +446,49 @@ async def dummy_data_sender():
         await asyncio.sleep(1)
 
 
-app = FastAPI(title="CanSat Ground Station (Python)")
+# ===================== FASTAPI APP & LIFESPAN =====================
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    log_json(event="startup", team=TEAM_ID, server_serial=USE_SERVER_SERIAL)
+    ensure_csv_header()
+    
+    tasks = []
+    serial_thread = None
+
+    if USE_SERVER_SERIAL:
+        # Start Serial Reader Thread
+        loop = asyncio.get_running_loop()
+        serial_thread = threading.Thread(target=serial_read_thread_target, args=(loop,), daemon=True)
+        serial_thread.start()
+        
+        # Start Serial Writer Task
+        tasks.append(asyncio.create_task(serial_writer_worker()))
+    
+    async def ws_ping():
+        while True:
+            await asyncio.sleep(10)
+            await broadcast_ws({"type": "ping"})
+            
+    tasks.append(asyncio.create_task(ws_ping()))
+    
+    yield
+    
+    # Shutdown
+    log_json(event="shutdown")
+    
+    # Signal thread to stop
+    _stop_event.set()
+    if serial_thread:
+        serial_thread.join(timeout=2)
+        
+    for t in tasks:
+        t.cancel()
+
+app = FastAPI(title="CanSat Ground Station (Python)", lifespan=lifespan)
+
 
 @app.post("/api/dummy/start")
 async def api_dummy_start():
@@ -422,13 +545,17 @@ async def api_serial_set(cfg: SerialCfg):
         raise HTTPException(400, detail="baud not allowed")
     state.cfg = cfg
     log_json(event="cfg_changed", port=cfg.port, baud=cfg.baud)
-    global _serial_transport
-    if _serial_transport is not None:
-        try:
-            _serial_transport.close()
-        except Exception:
-            pass
-        _serial_transport = None
+    
+    # Force reconnect by closing current port
+    global _serial_port
+    with _serial_lock:
+        if _serial_port and _serial_port.is_open:
+            try:
+                _serial_port.close()
+            except:
+                pass
+            _serial_port = None
+            
     return {"ok": True}
 
 # ---- Command uplink (backend เติม prefix CMD,<TEAM_ID>,...) ----
@@ -512,7 +639,10 @@ async def api_csv_save_now(payload: dict = Body(...)):
 async def ws_telemetry(ws: WebSocket):
     await ws.accept()
     ws_clients.add(ws)
-    log_json(event="ws_connected", client=f"{ws.client.host}:{ws.client.port}")
+    
+    c = ws.client
+    c_info = f"{c.host}:{c.port}" if c else "unknown"
+    log_json(event="ws_connected", client=c_info)
     try:
         while True:
             await ws.receive_text()   # no-op; แค่ detect disconnect
@@ -520,49 +650,47 @@ async def ws_telemetry(ws: WebSocket):
         pass
     finally:
         ws_clients.discard(ws)
-        log_json(event="ws_disconnected", client=f"{ws.client.host}:{ws.client.port}")
+        c = ws.client
+        c_info = f"{c.host}:{c.port}" if c else "unknown"
+        log_json(event="ws_disconnected", client=c_info)
 
 # ---- Static UI (same origin) ----
 app.mount("/", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
 
-# ---- Startup/Shutdown ----
-@app.on_event("startup")
-async def _startup():
-    log_json(event="startup", team=TEAM_ID, server_serial=USE_SERVER_SERIAL)
-    ensure_csv_header()
-    if USE_SERVER_SERIAL:
-        asyncio.create_task(serial_reader_manager())
-        asyncio.create_task(serial_writer_worker())
-    
-    async def ws_ping():
-        while True:
-            await asyncio.sleep(10)
-            await broadcast_ws({"type": "ping"})
-            
-    asyncio.create_task(ws_ping())
-
-@app.on_event("shutdown")
-async def _shutdown():
-    log_json(event="shutdown")
+# ---- Startup/Shutdown (Handled by lifespan) ----
+# @app.on_event("startup") / @app.on_event("shutdown") removed.
 
 if __name__ == "__main__":
     host = "0.0.0.0"
     port = 8000
 
-    # Get local IP address
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        s.connect(("8.8.8.8", 80))
-        local_ip = s.getsockname()[0]
+        # Try to find the actual local IP for display purposes
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            # doesn't even have to be reachable
+            s.connect(('10.255.255.255', 1))
+            local_ip = s.getsockname()[0]
+        except Exception:
+            local_ip = "127.0.0.1"
+        finally:
+            s.close()
     except Exception:
         local_ip = "127.0.0.1"
-    finally:
-        s.close()
 
     print("="*50)
     print("Daedalus Ground Station")
-    print(f"Access the UI from this computer at: http://localhost:{port}")
-    print(f"Access the UI from other devices on the same network at: http://{local_ip}:{port}")
+    print(f"Local UI: http://localhost:{port}")
+    print("Remote Access: Run 'ngrok http 8000' in a new terminal")
     print("="*50)
 
-    uvicorn.run(app, host=host, port=port)
+    print("Available serial ports:")
+    ports = serial.tools.list_ports.comports()
+    for port_info, desc, hwid in sorted(ports):
+        print(f"- {port_info}: {desc} [{hwid}]")
+    print("="*50)
+
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+    uvicorn.run(app, host=host, port=port, log_level="info")

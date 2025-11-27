@@ -99,13 +99,11 @@
       <div class="chartbox-main">
         <div class="charttitle-wrap">
           <div class="charttitle">Altitude Profile (m)</div>
-          <div class="chart-toggles" id="altitudeToggles">
-            <button class="btn sm active" data-series="Baro Alt">Baro</button>
-            <button class="btn sm active" data-series="GPS Alt">GPS</button>
-          </div>
         </div>
         <div id="chart-altitude"></div>
       </div>
+
+
       
       <!-- Key Values Grid -->
       <div class="panel-title">KEY VALUES</div>
@@ -153,8 +151,8 @@
             <input type="number" id="logN" min="50" max="5000" value="500" class="input" style="width:70px">
             <button id="refreshLogs" class="btn ghost sm">Clear Log</button>
             <label class="chk"><input type="checkbox" id="autoScroll" checked> Auto</label>
+            <label class="chk"><input type="checkbox" id="showRaw"> Raw</label>
             <label class="chk"><input type="checkbox" id="freeze"> Freeze</label>
-            <label class="chk"><input type="checkbox"id="wrapLines"> Wrap</label>
           </div>
           <div class="right" style="display:flex;gap:8px;align-items:center">
             <button id="copyLogs" class="btn sm">Copy Log</button>

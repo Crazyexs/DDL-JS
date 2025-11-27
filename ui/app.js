@@ -199,25 +199,10 @@ if (!window.__DGS_BOOTED__) {
   }
 
   function initCharts() {
-    st.charts.altitude = makeMulti('chart-altitude', ['Baro Alt', 'GPS Alt']);
+    st.charts.altitude = makeMulti('chart-altitude', ['Altitude']);
   }
   
-  function initChartToggles() {
-    el.altitudeToggles?.addEventListener('click', (e) => {
-      const btn = e.target.closest('button');
-      if (!btn) return;
-      
-      const seriesName = btn.dataset.series;
-      if (!seriesName) return;
-      
-      btn.classList.toggle('active');
-      
-      st.charts.altitude?.dispatchAction({
-        type: 'legendToggleSelect',
-        name: seriesName
-      });
-    });
-  }
+
 
   window.addEventListener('resize', () => {
     Object.values(st.charts).forEach(c => c?.resize());
@@ -264,6 +249,11 @@ if (!window.__DGS_BOOTED__) {
     el.lossCount && (el.lossCount.textContent = t.gs_loss_total);
 
     // ----- Time & State Tracking -----
+    // Use mission time from telemetry if valid, otherwise fallback to local tick
+    if (t.mission_time && /^\d\d:\d\d:\d\d$/.test(t.mission_time)) {
+        el.missionBig && (el.missionBig.textContent = t.mission_time);
+    }
+
     if (t.gps_time && /^\d\d:\d\d:\d\d$/.test(t.gps_time)) st.lastGPSHMS = t.gps_time;
     if (typeof t.altitude_m === 'number') st.lastAlt = t.altitude_m;
 
@@ -272,9 +262,9 @@ if (!window.__DGS_BOOTED__) {
       el.lastCmd && (el.lastCmd.textContent = t.cmd_echo);
     }
 
-    // ----- Chart -----
+    // ----- Charts -----
     const label = t.mission_time || hms();
-    pushChart(st.charts.altitude, label, [t.altitude_m, t.gps_altitude_m]);
+    pushChart(st.charts.altitude, label, [t.altitude_m]);
 
     // ----- Map -----
     if (t.gps_lat && t.gps_lon && typeof t.gps_lat === 'number' && typeof t.gps_lon === 'number') {
@@ -286,18 +276,32 @@ if (!window.__DGS_BOOTED__) {
     }
 
     // ----- Log Summary Line -----
-    const wrapIsOn = el.wrap?.checked;
-    let logText;
-    if (wrapIsOn && t.gs_raw_line) {
-        logText = t.gs_raw_line;
-    } else {
-        logText = `#${t.packet_count || '—'} ${t.state || '—'} | Alt: ${num(t.altitude_m)}m | ${t.cmd_echo ? `Echo: ${t.cmd_echo}` : ''}`;
+    try {
+      const showRaw = el.showRaw?.checked;
+      let logText;
+
+      if (showRaw && t.gs_raw_line) {
+          logText = t.gs_raw_line;
+      } else {
+          // "Easy Read" Format: #PKT STATE | Alt | Volt | Temp | Press | ...
+          logText = `#${t.packet_count} ${t.state} | ` +
+                    `Alt:${num(t.altitude_m)}m | ` +
+                    `Bat:${num(t.voltage_v, 2)}V | ` +
+                    `T:${num(t.temperature_c, 1)}C | ` +
+                    `P:${num(t.pressure_kpa, 1)}k | ` +
+                    (t.cmd_echo ? `Echo:${t.cmd_echo}` : '');
+      }
+      log('info', logText);
+    } catch (e) {
+      console.error("Log error:", e);
     }
-    log('info', logText);
   }
 
   // ---------- logs UX ----------
   (function () {
+    // DOM elements
+    el.showRaw = $('#showRaw');
+    
     if (!el.rawBox) return;
     const update = () => {
       const atBottom = (el.rawBox.scrollHeight - el.rawBox.clientHeight - el.rawBox.scrollTop) < 24;
@@ -308,7 +312,6 @@ if (!window.__DGS_BOOTED__) {
     el.jumpLiveBtn?.addEventListener('click', () => { el.rawBox.scrollTop = el.rawBox.scrollHeight; el.auto && (el.auto.checked = true); update(); });
     const mo = new MutationObserver(() => { if (el.auto?.checked) el.rawBox.scrollTop = el.rawBox.scrollHeight; update(); });
     mo.observe(el.rawBox, { childList: true, subtree: false });
-    el.wrap?.addEventListener('change', () => el.rawBox.classList.toggle('wrap', !!el.wrap.checked));
   })();
   el.refreshLogs?.addEventListener('click', () => { if (!el.rawBox) return; el.rawBox.innerHTML = ''; info('Log view cleared.'); });
   el.copyLogs?.addEventListener('click', async () => { if (!el.rawBox) return; await navigator.clipboard.writeText([...(el.rawBox.querySelectorAll('.logline'))].map(n => n.innerText).join('\n')); cmdEcho('Logs copied to clipboard.'); });
@@ -384,7 +387,8 @@ if (!window.__DGS_BOOTED__) {
 
   // ---------- WebSocket Connection ----------
   function connect() {
-    const url = `ws://${window.location.host}/ws/telemetry`;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${protocol}//${window.location.host}/ws/telemetry`;
     info(`Connecting to ${url}...`);
     st.ws = new WebSocket(url);
 
@@ -462,11 +466,15 @@ if (!window.__DGS_BOOTED__) {
   function init() {
     initMap();
     initCharts();
-    initChartToggles();
     fillCmds();
     initTheme();
     info('DAEDALUS Ground Station Initialized.');
     connect();
+    
+    // Force map resize for mobile layout
+    setTimeout(() => {
+        window.dispatchEvent(new Event('resize'));
+    }, 500);
   }
   window.addEventListener('DOMContentLoaded', init);
 

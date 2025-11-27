@@ -241,58 +241,90 @@ a { color: var(--accent); text-decoration: none; }
 .jump-live { display: flex; justify-content: center; margin-top: 8px; }
 .jump-live[hidden] { display: none; }
 
-/* Responsive */
+/* Responsive - Mobile Mode (for Teacher/Phone via Ngrok) */
 @media (max-width: 768px) {
   body {
-    overflow: auto; /* Allow scrolling on mobile */
+    overflow: hidden; /* Prevent scrolling */
   }
+
+  /* Hide everything except the map panel */
+  .topbar, 
+  .strip-highlights,
+  .values-panel,
+  .logs-panel {
+    display: none !important;
+  }
+
+  /* Make the main grid full screen */
   .screen {
-    display: flex;
-    flex-direction: column;
-    padding: 5px;
-    gap: 5px;
+    display: block; /* Remove grid */
+    padding: 0;
+    height: 100vh;
+    width: 100vw;
   }
 
   .map-panel {
-    order: 1; /* Show map first */
+    grid-column: auto;
+    grid-row: auto;
+    border: none;
+    border-radius: 0;
+    height: 100%;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
   }
 
-  .values-panel {
-    order: 2;
+  .panel-title {
+    /* Minimal header for the map */
+    padding: 10px;
+    background: var(--panel-strong);
+    z-index: 10;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    margin: 0;
   }
 
-  .logs-panel {
-    order: 3;
-    display: none; /* Hide logs by default on mobile */
+  .missionbar {
+    display: none; /* Hide start button/big time as requested */
   }
 
-  .map {
-    height: 40vh; /* Make map taller on mobile */
+  /* Map takes remaining height */
+  #map {
+    flex: 1;
+    height: auto !important; /* Override inline height */
+    border: none;
+    border-radius: 0;
+  }
+
+  /* Floating Google Maps Button */
+  .gmaplink {
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000; /* Above map */
+    width: 80%;
+    text-align: center;
+    margin: 0;
+  }
+
+  .gmaplink a {
+    display: block;
+    background: #4285F4; /* Google Blue */
+    color: white;
+    font-size: 18px;
+    font-weight: bold;
+    padding: 16px 20px;
+    border-radius: 50px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    text-decoration: none;
+    border: 2px solid white;
   }
   
-  .strip-highlights,
-  .top-clocks,
-  .brand .tag,
-  .brand .sub,
-  .missionbar .btn.ghost {
-    display: none; /* Hide non-essential elements */
-  }
-
-  .values-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .kv-major-large .v {
-    font-size: 28px;
-  }
-
-  .kv-cell .v {
-    font-size: 18px;
-  }
-  .kv-group .v-group {
-    font-size: 16px;
+  .gmaplink a:active {
+    transform: scale(0.95);
   }
 }
+
 
 /* SUNLIGHT BOOST (optional utility for extreme glare conditions)
    add class 'sun-boost' on <html> or <body> when needed */
