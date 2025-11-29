@@ -1,0 +1,75 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36" version="29.1.1">
+  <diagram id="CanSatGS_V2_Simple" name="GNS_V2_Simplified_Flow">
+    <mxGraphModel dx="1348" dy="771" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="cansat" parent="1" style="shape=cube;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;darkOpacity=0.05;darkOpacity2=0.1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=14;" value="CanSat Payload" vertex="1">
+          <mxGeometry height="80" width="120" x="40" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="radio_link" edge="1" parent="1" source="cansat" style="shape=link;html=1;width=10;" target="gs_hardware" value="Radio Link (XBee)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="grp_gs" parent="1" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;startSize=30;fontSize=14;rounded=1;" value="Ground Station Core (Python/FastAPI)" vertex="1">
+          <mxGeometry height="330" width="400" x="280" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="G9KMePriw9P-jpuP2cfO-2" edge="1" parent="grp_gs" source="gs_hardware" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="100" y="249.9999999999999" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="gs_hardware" parent="grp_gs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" value="Serial Port Handler" vertex="1">
+          <mxGeometry height="60" width="120" x="40" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="gs_logic" parent="grp_gs" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fontStyle=1" value="Telemetry Engine" vertex="1">
+          <mxGeometry height="60" width="140" x="200" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="file_csv" parent="grp_gs" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=center;spacingTop=-6;fillColor=#f5f5f5;strokeColor=#666666;" value="Flight_1043.csv" vertex="1">
+          <mxGeometry height="50" width="80" x="170" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="file_log" parent="grp_gs" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=center;spacingTop=-6;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="ground.jsonl" vertex="1">
+          <mxGeometry height="50" width="70" x="310" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="l_hw_logic" edge="1" parent="grp_gs" source="gs_hardware" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="gs_logic">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="l_logic_csv" edge="1" parent="grp_gs" source="gs_logic" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="file_csv">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="l_logic_log" edge="1" parent="grp_gs" source="gs_logic" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="file_log">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="grp_ui" parent="1" style="swimlane;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;startSize=30;fontSize=14;rounded=1;" value="Operator Dashboard (Browser)" vertex="1">
+          <mxGeometry height="320" width="260" x="800" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ui_display" parent="grp_ui" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;" value="Real-time Display (Plots, Map, Values)" vertex="1">
+          <mxGeometry height="80" width="160" x="50" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ui_controls" parent="grp_ui" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" value="Command Control" vertex="1">
+          <mxGeometry height="60" width="160" x="50" y="220" as="geometry" />
+        </mxCell>
+        <mxCell id="remote" parent="1" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;" value="Remote Teammates" vertex="1">
+          <mxGeometry height="100" width="180" x="500" y="480" as="geometry" />
+        </mxCell>
+        <mxCell id="ngrok" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontStyle=2" value="Ngrok Tunnel" vertex="1">
+          <mxGeometry height="30" width="80" x="560" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="flow_telemetry" edge="1" parent="1" source="gs_logic" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;strokeWidth=3;fillColor=#d5e8d4;strokeColor=#82b366;" target="ui_display" value="Telemetry Stream (WebSocket)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="flow_command" edge="1" parent="1" source="ui_controls" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;exitX=0;exitY=0.5;exitDx=0;exitDy=0;strokeWidth=2;dashed=1;fillColor=#f5f5f5;strokeColor=#666666;" target="gs_hardware" value="Commands (API)">
+          <mxGeometry relative="1" x="-0.0952" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="370" y="330" />
+              <mxPoint x="370" y="260" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="flow_remote" edge="1" parent="1" source="remote" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;dashed=1;" target="grp_gs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

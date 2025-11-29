@@ -1,0 +1,163 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36" version="29.1.1">
+  <diagram id="CanSatGS_V1" name="GNS_V1_Architecture">
+    <mxGraphModel dx="1427" dy="816" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="grp_hw" connectable="0" parent="1" style="group" value="Hardware / External" vertex="1">
+          <mxGeometry height="480" width="200" x="40" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="hw_cansat" parent="grp_hw" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1" value="CanSat Payload (Sensors + MCU)" vertex="1">
+          <mxGeometry height="60" width="160" x="20" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="hw_xbee_air" parent="grp_hw" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" value="XBee (Air)" vertex="1">
+          <mxGeometry height="40" width="100" x="50" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="hw_xbee_gnd" parent="grp_hw" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" value="XBee (Ground)" vertex="1">
+          <mxGeometry height="40" width="100" x="50" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="hw_serial" parent="grp_hw" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="USB Serial Port&amp;nbsp;" vertex="1">
+          <mxGeometry height="40" width="160" x="20" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="link_hw1" edge="1" parent="grp_hw" source="hw_cansat" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="hw_xbee_air">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="link_radio" edge="1" parent="grp_hw" source="hw_xbee_air" style="endArrow=classic;startArrow=classic;html=1;dashed=1;" target="hw_xbee_gnd" value="Radio Link (2.4GHz / 900MHz)">
+          <mxGeometry height="50" relative="1" width="50" as="geometry" />
+        </mxCell>
+        <mxCell id="link_hw2" edge="1" parent="grp_hw" source="hw_xbee_gnd" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="hw_serial">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="grp_backend" parent="1" style="swimlane;horizontal=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="&amp;nbsp; &amp;nbsp; &amp;nbsp;Backend (Python(main.py) / FastAPI)" vertex="1">
+          <mxGeometry height="560" width="440" x="270" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="be_serial_thread" parent="grp_backend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Serial Read Thread" vertex="1">
+          <mxGeometry height="50" width="120" x="30" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="KS8RT1WWWrIMafTIrBxs-2" edge="1" parent="grp_backend" source="be_parser" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" target="file_json">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="380" y="260" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="be_parser" parent="grp_backend" style="rounded=1;whiteSpace=wrap;html=1;" value="Telemetry Parser (Validation &amp; Formatting)" vertex="1">
+          <mxGeometry height="60" width="160" x="130" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="be_csv" parent="grp_backend" style="rounded=1;whiteSpace=wrap;html=1;" value="CSV Logger" vertex="1">
+          <mxGeometry height="40" width="100" x="230" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="file_csv" parent="grp_backend" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=center;spacingTop=-6;fillColor=#f5f5f5;strokeColor=#666666;" value="Flight_1043.csv" vertex="1">
+          <mxGeometry height="60" width="90" x="340" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="file_json" parent="grp_backend" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=center;spacingTop=-6;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="ground.jsonl" vertex="1">
+          <mxGeometry height="60" width="90" x="330" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="be_ws" parent="grp_backend" style="rounded=1;whiteSpace=wrap;html=1;" value="WebSocket Manager (Broadcaster)" vertex="1">
+          <mxGeometry height="50" width="160" x="200" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="be_api" parent="grp_backend" style="rounded=1;whiteSpace=wrap;html=1;" value="API Endpoint POST /api/command" vertex="1">
+          <mxGeometry height="40" width="160" x="80" y="510" as="geometry" />
+        </mxCell>
+        <mxCell id="be_uplink_q" parent="grp_backend" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;" value="Uplink Queue" vertex="1">
+          <mxGeometry height="40" width="120" x="100" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="be_serial_write" parent="grp_backend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Serial Writer" vertex="1">
+          <mxGeometry height="40" width="120" x="60" y="370" as="geometry" />
+        </mxCell>
+        <mxCell id="link_read_parse" edge="1" parent="grp_backend" source="be_serial_thread" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="be_parser">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="link_parse_csv" edge="1" parent="grp_backend" source="be_parser" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="be_csv">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="link_csv_file" edge="1" parent="grp_backend" source="be_csv" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="file_csv">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="link_parse_ws" edge="1" parent="grp_backend" source="be_parser" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="be_ws">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="link_api_q" edge="1" parent="grp_backend" source="be_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="be_uplink_q">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="link_q_write" edge="1" parent="grp_backend" source="be_uplink_q" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="be_serial_write">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="grp_ui" parent="1" style="swimlane;horizontal=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" value="Frontend (Browser / app.js/index.html/styles.css)" vertex="1">
+          <mxGeometry height="560" width="280" x="770" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ui_ws_client" parent="grp_ui" style="rounded=1;whiteSpace=wrap;html=1;" value="WebSocket Client (onmessage)" vertex="1">
+          <mxGeometry height="50" width="160" x="60" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="ui_viz" parent="grp_ui" style="swimlane;whiteSpace=wrap;html=1;startSize=20;" value="Visualization" vertex="1">
+          <mxGeometry height="130" width="200" x="40" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="ui_text" parent="ui_viz" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" value="Text Panels" vertex="1">
+          <mxGeometry height="30" width="80" x="10" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ui_charts" parent="ui_viz" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" value="ECharts Plots" vertex="1">
+          <mxGeometry height="30" width="90" x="100" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ui_map" parent="ui_viz" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" value="Leaflet Map" vertex="1">
+          <mxGeometry height="30" width="90" x="55" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="ui_input" parent="grp_ui" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" value="User Input (Buttons / Commands)" vertex="1">
+          <mxGeometry height="50" width="160" x="70" y="480" as="geometry" />
+        </mxCell>
+        <mxCell id="link_ws_viz" edge="1" parent="grp_ui" source="ui_ws_client" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="ui_viz">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="grp_remote" connectable="0" parent="1" style="group" value="Remote Access" vertex="1">
+          <mxGeometry height="160" width="320" x="520" y="620" as="geometry" />
+        </mxCell>
+        <mxCell id="ngrok_agent" parent="grp_remote" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" value="Ngrok Agent (Local)" vertex="1">
+          <mxGeometry height="50" width="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ngrok_cloud" parent="grp_remote" style="cloud;whiteSpace=wrap;html=1;" value="Ngrok Cloud" vertex="1">
+          <mxGeometry height="80" width="120" x="110" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="link_cloud_agent" edge="1" parent="grp_remote" source="ngrok_cloud" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="ngrok_agent">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="remote_user" parent="grp_remote" style="shape=actor;whiteSpace=wrap;html=1;" value="" vertex="1">
+          <mxGeometry height="60" width="40" x="270" as="geometry" />
+        </mxCell>
+        <mxCell id="link_remote_cloud" edge="1" parent="grp_remote" source="remote_user" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="ngrok_cloud">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="JuN8SVP5oC-z5UgzugJX-7" parent="grp_remote" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="Remote User" vertex="1">
+          <mxGeometry height="30" width="60" x="260" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="conn_hw_be" edge="1" parent="1" source="hw_serial" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="be_serial_thread">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="200" y="360" />
+              <mxPoint x="260" y="360" />
+              <mxPoint x="260" y="345" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="conn_be_hw_write" edge="1" parent="1" source="be_serial_write" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.75;entryDx=0;entryDy=0;" target="hw_serial">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="240" y="420" />
+              <mxPoint x="240" y="390" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="conn_be_ui_ws" edge="1" parent="1" source="be_ws" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="ui_ws_client">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="conn_ui_be_api" edge="1" parent="1" source="ui_input" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="be_api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="conn_ngrok_be" edge="1" parent="1" source="ngrok_agent" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="be_ws">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="560" y="620" />
+              <mxPoint x="560" y="620" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

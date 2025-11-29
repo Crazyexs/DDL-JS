@@ -1,127 +1,143 @@
 if (!window.__DGS_BOOTED__) {
   window.__DGS_BOOTED__ = true;
 
-/* DAEDALUS #1043 — app.js (CSV + JSON)
- * - Browser (Web Serial): pick port, open/close, read loop, write on commands
- * - Server bridge (WebSocket, optional): list/open/close/read/write via JSON protocol
- * - Unified DGS_appendLine(): accepts CSV (28 cols) or {"telemetry":{...}}
- * - Everything logs to the UI (info/warn/err)
+/* DAEDALUS #1043 — app.js
+ *
+ * This file controls the website (Frontend).
+ * It does three main things:
+ * 1. Connects to the Backend (Python) to get live data.
+ * 2. Updates the screen (text, charts, maps) when data arrives.
+ * 3. Sends commands from the buttons back to the Backend.
  */
 
 (function () {
-  // ---------- helpers ----------
-  const $ = (s) => document.querySelector(s);
-  const pad = (n) => String(n).padStart(2, '0');
-  const hms = (d = new Date()) => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-  const esc = (s) => String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+  // ---------- HELPERS (Little shortcuts) ----------
+  const $ = (s) => document.querySelector(s); // Selects an element on the page
+  const pad = (n) => String(n).padStart(2, '0'); // Adds a zero in front (5 -> 05)
+  const hms = (d = new Date()) => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; // Gets time as HH:MM:SS
+  // This cleans text to prevent code injection attacks
+  const esc = (s) => String(s).replace(/[&<""']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+  // Formats a number (e.g., 12.3456 -> 12.3)
   const num = (x, d = 1) => (x === undefined || x === null || isNaN(+x)) ? '—' : (+x).toFixed(d);
+  // Gets a color from the CSS file
   const getCssVar = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
-  // ---------- state ----------
+  // ---------- STATE (Variables that change) ----------
   const st = {
     teamId: window.DGS_TEAM_ID || 1043,
-    t0: null,
-    charts: {},
-    map: null,
-    marker: null,
-    ws: null, // WebSocket instance
+    t0: null,      // Start time of the mission
+    charts: {},    // Stores the chart objects
+    map: null,     // Stores the map object
+    marker: null,  // Stores the map marker object
+    ws: null,      // The WebSocket connection to the server
     lastGPSHMS: null,
     altZero: 0,
     lastAlt: 0,
-    // dummy
+    // Dummy data state
     dummy: { id: null, packet: 0, lat: 18.788, lon: 98.985 },
   };
 
-  // ---------- DOM ----------
+  // ---------- DOM ELEMENTS (Links to HTML items) ----------
   const el = {
-    // theme
-    toggleTheme: $('#toggleTheme'),
-    // clocks
-    utcClock: $('#utcClock'),
-    missionSmall: $('#missionTime'),
-    missionBig: $('#missionTimeBig'),
-    // conn
-    connPill: $('#connPill'),
-    // map + mission
-    btnStartMission: $('#btnStartMission'),
-    mapEl: $('#map'),
-    mapToggle: $('#toggleMapSize'),
-    gpsMini: $('#gpsMiniTitle'),
-    gmapA: $('#gmapA'),
-    // health
-    rxCount: $('#rxCount'),
-    lossCount: $('#lossCount'),
-    // logs
-    rawBox: $('#rawBox'),
-    logN: $('#logN'),
-    auto: $('#autoScroll'),
-    freeze: $('#freeze'),
-    wrap: $('#wrapLines'),
-    refreshLogs: $('#refreshLogs'),
-    jumpLive: $('#jumpLive'),
-    jumpLiveBtn: $('#jumpLiveBtn'),
-    copyLogs: $('#copyLogs'),
-    resetAll: $('#btnResetAllTop'),
-    lastCmd: $('#lastCmd'),
-    // commands
-    quick: $('#quickCmd'),
-    manual: $('#manualCmd'),
-    send: $('#sendCmd'),
-    // new buttons from index.html
-    btnOpenCsvFolder: $('#btnOpenCsvFolder'),
-    btnSim: $('#btnSim'),
+    // Theme button
+    toggleTheme: $("#toggleTheme"),
+    // Clocks
+    utcClock: $("#utcClock"),
+    missionSmall: $("#missionTime"),
+    missionBig: $("#missionTimeBig"),
+    // Connection status pill
+    connPill: $("#connPill"),
+    // Map & Mission controls
+    btnStartMission: $("#btnStartMission"),
+    mapEl: $("#map"),
+    mapToggle: $("#toggleMapSize"),
+    gpsMini: $("#gpsMiniTitle"),
+    gmapA: $("#gmapA"),
+    // Health Counters
+    rxCount: $("#rxCount"),
+    lossCount: $("#lossCount"),
+    // Log Box elements
+    rawBox: $("#rawBox"),
+    logN: $("#logN"),
+    auto: $("#autoScroll"),
+    freeze: $("#freeze"),
+    wrap: $("#wrapLines"),
+    refreshLogs: $("#refreshLogs"),
+    jumpLive: $("#jumpLive"),
+    jumpLiveBtn: $("#jumpLiveBtn"),
+    copyLogs: $("#copyLogs"),
+    resetAll: $("#btnResetAllTop"),
+    lastCmd: $("#lastCmd"),
+    // Command Inputs
+    quick: $("#quickCmd"),
+    manual: $("#manualCmd"),
+    send: $("#sendCmd"),
+    // New buttons
+    btnOpenCsvFolder: $("#btnOpenCsvFolder"),
+    btnSim: $("#btnSim"),
     
-    // New Large Displays
-    missionState: $('#missionState'),
-    liveAltitude: $('#liveAltitude'),
-    missionMode: $('#missionMode'),
-    gpsSats: $('#gpsSats'),
-    compassArrow: $('#compassArrow'),
-    heading: $('#heading'),
+    // Large Text Displays
+    missionState: $("#missionState"),
+    liveAltitude: $("#liveAltitude"),
+    missionMode: $("#missionMode"),
+    gpsSats: $("#gpsSats"),
+    compassArrow: $("#compassArrow"),
+    heading: $("#heading"),
 
-    // New Key Values
-    val_temp: $('#val_temp'),
-    val_pressure: $('#val_pressure'),
-    val_voltage: $('#val_voltage'),
-    val_current: $('#val_current'),
-    val_gyro_x: $('#val_gyro_x'),
-    val_gyro_y: $('#val_gyro_y'),
-    val_gyro_z: $('#val_gyro_z'),
-    val_accel_x: $('#val_accel_x'),
-    val_accel_y: $('#val_accel_y'),
-    val_accel_z: $('#val_accel_z'),
+    // Key Value Grid items
+    val_temp: $("#val_temp"),
+    val_pressure: $("#val_pressure"),
+    val_voltage: $("#val_voltage"),
+    val_current: $("#val_current"),
+    val_gyro_x: $("#val_gyro_x"),
+    val_gyro_y: $("#val_gyro_y"),
+    val_gyro_z: $("#val_gyro_z"),
+    val_accel_x: $("#val_accel_x"),
+    val_accel_y: $("#val_accel_y"),
+    val_accel_z: $("#val_accel_z"),
     
     // Chart Toggles
-    altitudeToggles: $('#altitudeToggles'),
+    altitudeToggles: $("#altitudeToggles"),
   };
 
-  // ---------- log UI ----------
+  // ---------- LOGGING FUNCTIONS (Writing to the screen box) ----------
   function log(kind, msg) {
     const ts = hms();
+    // Choose color based on message type (error, warning, command, or normal)
     const klass = kind === 'err' ? 'k err' : kind === 'warn' ? 'k warn' : (kind === 'cmd' ? 'k cmd' : 'text');
+    
     const line = document.createElement('div');
     line.className = 'logline';
     line.innerHTML = `<span class="ts">[${ts}]</span><span class="${klass}">${esc(msg)}</span>`;
+    
     if (!el.rawBox) return;
+    
+    // Keep only the last N lines to prevent the browser from getting slow
     const max = Number(el.logN?.value || 500);
     while (el.rawBox.children.length >= max) el.rawBox.removeChild(el.rawBox.firstChild);
+    
     el.rawBox.appendChild(line);
+    
+    // Auto-scroll to the bottom unless the user paused it
     if (el.auto?.checked && !el.freeze?.checked) el.rawBox.scrollTop = el.rawBox.scrollHeight;
   }
+  
+  // Shortcuts for logging
   function info(m) { log('info', m); }
   function warn(m) { log('warn', m); }
   function err(m) { log('err', m); }
   function cmdEcho(m) { log('cmd', m); }
 
 
-  // ---------- health & connection ----------
+  // ---------- HEALTH & CONNECTION UI ----------
   function setPill(connected, text = 'Connected') {
     if (!el.connPill) return;
     el.connPill.textContent = connected ? text : 'Disconnected';
     el.connPill.className = 'pill' + (connected ? ' ok' : '');
   }
 
-  // ---------- clocks ----------
+  // ---------- CLOCKS ----------
+  // Updates the UTC clock every second
   function tickUTC() {
     if (!el.utcClock) return;
     const d = new Date();
@@ -129,6 +145,7 @@ if (!window.__DGS_BOOTED__) {
   }
   setInterval(tickUTC, 1000); tickUTC();
 
+  // Updates the Mission Clock (T+ XX:XX:XX)
   function tickMission() {
     if (!st.t0 || el.freeze?.checked) return;
     const s = Math.floor((Date.now() - st.t0) / 1000);
@@ -137,22 +154,28 @@ if (!window.__DGS_BOOTED__) {
     el.missionBig && (el.missionBig.textContent = t);
   }
   setInterval(tickMission, 250);
+  
+  // Start button for the mission clock
   el.btnStartMission?.addEventListener('click', () => { if (!st.t0) st.t0 = Date.now(); info("Mission Timer Started.");});
 
 
-  // ---------- map ----------
+  // ---------- MAP LOGIC ----------
   function initMap() {
     if (!el.mapEl) return;
+    // Create the map centered on a default location
     st.map = L.map('map', { zoomControl: true, attributionControl: false }).setView([18.788, 98.985], 16);
+    // Load map tiles from OpenStreetMap
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(st.map);
+    // Add a marker pin
     st.marker = L.marker([18.788, 98.985]).addTo(st.map);
   }
   
-  // ---------- charts ----------
+  // ---------- CHART LOGIC (Graphs) ----------
   function getChartColors() {
     return [getCssVar('--chart-color-1'), getCssVar('--chart-color-2')];
   }
 
+  // Creates a new chart using ECharts library
   function makeMulti(elId, names) {
     const elc = document.getElementById(elId);
     if (!elc) return null;
@@ -162,7 +185,7 @@ if (!window.__DGS_BOOTED__) {
       grid: { left: 44, right: 18, top: 38, bottom: 28 },
       animation: false,
       xAxis: { type: 'category', data: [], axisLabel: { show: false } },
-      yAxis: { type: 'value', scale: true, axisLabel: { color: getCssVar('--muted')} },
+      yAxis: { type: 'value', scale: true, axisLabel: { color: getCssVar('--muted') } },
       legend: { show: false, data: names, top: 0, textStyle: { color: getCssVar('--fg') } }, // Keep legend data, but hide it
       series: names.map((n, i) => ({ type: 'line', name: n, showSymbol: false, data: [], lineStyle: { color: colors[i] } })),
       tooltip: { trigger: 'axis' }
@@ -170,16 +193,25 @@ if (!window.__DGS_BOOTED__) {
     return inst;
   }
 
+  // Adds new data points to an existing chart
   function pushChart(inst, label, values) {
     if (!inst) return;
     const opt = inst.getOption();
+    
+    // Add new X-axis label (Time)
     opt.xAxis[0].data.push(label);
+    
+    // Add new Y-axis values (Data)
     (Array.isArray(values) ? values : [values]).forEach((v, i) => opt.series[i].data.push(v));
+    
+    // Keep chart size fixed (remove old points if too many)
     const max = 120;
     if (opt.xAxis[0].data.length > max) { opt.xAxis[0].data.shift(); opt.series.forEach(s => s.data.shift()); }
+    
     inst.setOption(opt, false, true);
   }
   
+  // Updates chart colors when theme changes
   function updateChartColors() {
     const colors = getChartColors();
     const muted = getCssVar('--muted');
@@ -203,33 +235,35 @@ if (!window.__DGS_BOOTED__) {
   }
   
 
-
+  // Resize charts when the window size changes
   window.addEventListener('resize', () => {
     Object.values(st.charts).forEach(c => c?.resize());
     st.map?.invalidateSize();
   });
 
-  // ---------- telemetry handling ----------
+  // ---------- TELEMETRY HANDLING (The Core Logic) ----------
+  
+  // Rotates the compass arrow
   function updateCompass(heading) {
     if (!el.compassArrow) return;
     el.compassArrow.style.transform = `rotate(${heading || 0}deg)`;
     el.heading.textContent = `${num(heading, 0)}°`;
   }
 
+  // This function runs EVERY TIME a new data packet arrives!
   function onTelemetry(t) {
-    // This function is the main entry point for new telemetry data from the backend
-    if (el.freeze?.checked) return;
+    if (el.freeze?.checked) return; // Stop updating if "Freeze" is checked
 
-    // ----- Big Displays -----
+    // 1. Update Big Text Displays
     el.missionState && (el.missionState.textContent = t.state || '—');
     el.liveAltitude && (el.liveAltitude.textContent = num(t.altitude_m, 1));
     
-    // ----- Strip Displays -----
+    // 2. Update Strip Displays
     el.missionMode && (el.missionMode.textContent = t.mode || '—');
     el.gpsSats && (el.gpsSats.textContent = t.gps_sats ?? '—');
     updateCompass(t.heading);
 
-    // ----- Key Value Panel -----
+    // 3. Update Key Value Grid
     el.val_temp && (el.val_temp.textContent = `${num(t.temperature_c, 1)} °C`);
     el.val_pressure && (el.val_pressure.textContent = `${num(t.pressure_kpa, 2)} kPa`);
     el.val_voltage && (el.val_voltage.textContent = `${num(t.voltage_v, 2)} V`);
@@ -244,12 +278,12 @@ if (!window.__DGS_BOOTED__) {
     el.val_accel_z && (el.val_accel_z.textContent = num(t.accel_y_dps2, 2));
 
 
-    // ----- Counters -----
+    // 4. Update Packet Counters
     el.rxCount && (el.rxCount.textContent = t.gs_rx_count);
     el.lossCount && (el.lossCount.textContent = t.gs_loss_total);
 
-    // ----- Time & State Tracking -----
-    // Use mission time from telemetry if valid, otherwise fallback to local tick
+    // 5. Update Time
+    // Use mission time from telemetry if valid
     if (t.mission_time && /^\d\d:\d\d:\d\d$/.test(t.mission_time)) {
         el.missionBig && (el.missionBig.textContent = t.mission_time);
     }
@@ -257,25 +291,25 @@ if (!window.__DGS_BOOTED__) {
     if (t.gps_time && /^\d\d:\d\d:\d\d$/.test(t.gps_time)) st.lastGPSHMS = t.gps_time;
     if (typeof t.altitude_m === 'number') st.lastAlt = t.altitude_m;
 
-    // ----- Command Echo -----
+    // 6. Update Command Echo (what the satellite said it received)
     if (t.cmd_echo) {
       el.lastCmd && (el.lastCmd.textContent = t.cmd_echo);
     }
 
-    // ----- Charts -----
+    // 7. Update Charts
     const label = t.mission_time || hms();
     pushChart(st.charts.altitude, label, [t.altitude_m]);
 
-    // ----- Map -----
+    // 8. Update Map
     if (t.gps_lat && t.gps_lon && typeof t.gps_lat === 'number' && typeof t.gps_lon === 'number') {
       const pos = [t.gps_lat, t.gps_lon];
-      st.marker?.setLatLng(pos);
-      st.map?.panTo(pos, { animate: false });
+      st.marker?.setLatLng(pos); // Move marker
+      st.map?.panTo(pos, { animate: false }); // Move camera
       el.gpsMini && (el.gpsMini.textContent = `${t.gps_lat.toFixed(5)}, ${t.gps_lon.toFixed(5)} • sats: ${t.gps_sats ?? '—'}`);
       el.gmapA && (el.gmapA.href = `https://maps.google.com/?q=${t.gps_lat},${t.gps_lon}`);
     }
 
-    // ----- Log Summary Line -----
+    // 9. Update Text Log (bottom right box)
     try {
       const showRaw = el.showRaw?.checked;
       let logText;
@@ -283,7 +317,7 @@ if (!window.__DGS_BOOTED__) {
       if (showRaw && t.gs_raw_line) {
           logText = t.gs_raw_line;
       } else {
-          // "Easy Read" Format: #PKT STATE | Alt | Volt | Temp | Press | ...
+          // Create an "Easy Read" format for the log
           logText = `#${t.packet_count} ${t.state} | ` +
                     `Alt:${num(t.altitude_m)}m | ` +
                     `Bat:${num(t.voltage_v, 2)}V | ` +
@@ -297,13 +331,14 @@ if (!window.__DGS_BOOTED__) {
     }
   }
 
-  // ---------- logs UX ----------
+  // ---------- LOGS UI CONTROL ----------
   (function () {
     // DOM elements
-    el.showRaw = $('#showRaw');
+    el.showRaw = $("#showRaw");
     
     if (!el.rawBox) return;
     const update = () => {
+      // Detect if user scrolled up
       const atBottom = (el.rawBox.scrollHeight - el.rawBox.clientHeight - el.rawBox.scrollTop) < 24;
       if (el.jumpLive) el.jumpLive.hidden = atBottom || el.auto?.checked;
     };
@@ -317,7 +352,7 @@ if (!window.__DGS_BOOTED__) {
   el.copyLogs?.addEventListener('click', async () => { if (!el.rawBox) return; await navigator.clipboard.writeText([...(el.rawBox.querySelectorAll('.logline'))].map(n => n.innerText).join('\n')); cmdEcho('Logs copied to clipboard.'); });
   el.resetAll?.addEventListener('click', () => { if (el.rawBox) el.rawBox.innerHTML = ''; Object.values(st.charts).forEach(c => c?.clear()); initCharts(); cmdEcho('UI Reset.'); });
 
-  // ---------- commands ----------
+  // ---------- COMMANDS (Sending data to satellite) ----------
   const QUICK_COMMANDS = [
     'CX,ON', 'CX,OFF',
     'CAL',
@@ -326,6 +361,8 @@ if (!window.__DGS_BOOTED__) {
     'MEC,PL,ON', 'MEC,PL,OFF',
     '/dummy.on', '/dummy.off'
   ];
+  
+  // Populates the dropdown menu
   function fillCmds() {
     if (!el.quick) return;
     el.quick.innerHTML = '';
@@ -334,11 +371,12 @@ if (!window.__DGS_BOOTED__) {
     QUICK_COMMANDS.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; el.quick.append(o); });
   }
 
+  // Sends the command to the backend
   async function sendCommand(cmdStr) {
     const cmd = cmdStr.trim();
     if (!cmd) return;
 
-    // Handle local slash-commands
+    // Handle local slash-commands (shortcuts that don't go to the satellite)
     if (cmd.startsWith('/')) {
         const command = cmd.toLowerCase();
         if (command === '/dummy.on') {
@@ -360,9 +398,9 @@ if (!window.__DGS_BOOTED__) {
         return;
     }
 
-    // Immediate UI Update for remote commands
+    // Update UI immediately to show we tried to send
     el.lastCmd.textContent = cmd;
-    cmdEcho('> ' + cmd); // Optimistic echo to log
+    cmdEcho('> ' + cmd);
 
     try {
       const res = await fetch('/api/command', {
@@ -374,7 +412,7 @@ if (!window.__DGS_BOOTED__) {
         const errBody = await res.text();
         throw new Error(`HTTP ${res.status}: ${errBody}`);
       }
-      // The successful command will be echoed back in the telemetry packet later
+      // If successful, we just wait. The satellite will echo the command back later if it got it.
     } catch (e) {
       err(`Command failed: ${e.message}`);
     }
@@ -385,7 +423,7 @@ if (!window.__DGS_BOOTED__) {
   el.manual?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.send.click(); } });
 
 
-  // ---------- WebSocket Connection ----------
+  // ---------- WEBSOCKET CONNECTION (Real-time link) ----------
   function connect() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = `${protocol}//${window.location.host}/ws/telemetry`;
@@ -403,7 +441,7 @@ if (!window.__DGS_BOOTED__) {
         if (data.type === 'error') {
           err(data.message || 'Received an unknown error from backend.');
         } else if (data.type !== 'ping') {
-          onTelemetry(data);
+          onTelemetry(data); // Process the data!
         }
       } catch (e) {
         warn(`Invalid JSON from backend: ${e.message}`);
@@ -414,7 +452,7 @@ if (!window.__DGS_BOOTED__) {
       st.ws = null;
       err('Backend disconnected.');
       setPill(false, 'Retrying...');
-      setTimeout(connect, 2000); // Reconnect after 2s
+      setTimeout(connect, 2000); // Try to reconnect after 2 seconds
     };
 
     st.ws.onerror = (e) => {
@@ -424,7 +462,7 @@ if (!window.__DGS_BOOTED__) {
     };
   }
 
-  // ---------- Action Buttons ----------
+  // ---------- ACTION BUTTONS ----------
   el.btnOpenCsvFolder?.addEventListener('click', async () => {
       try {
           const res = await fetch('/api/csv/open-folder');
@@ -445,7 +483,7 @@ if (!window.__DGS_BOOTED__) {
       }
   });
   
-  // ---------- Theme ----------
+  // ---------- THEME (Light/Dark Mode) ----------
   function initTheme() {
     const root = document.documentElement;
     const saved = localStorage.getItem('dgs-theme');
@@ -462,7 +500,7 @@ if (!window.__DGS_BOOTED__) {
     });
   }
 
-  // ---------- init ----------
+  // ---------- INITIALIZATION (Startup) ----------
   function init() {
     initMap();
     initCharts();
@@ -471,7 +509,7 @@ if (!window.__DGS_BOOTED__) {
     info('DAEDALUS Ground Station Initialized.');
     connect();
     
-    // Force map resize for mobile layout
+    // Force map to resize correctly after loading
     setTimeout(() => {
         window.dispatchEvent(new Event('resize'));
     }, 500);

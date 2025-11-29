@@ -1,0 +1,206 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36" version="29.1.1">
+  <diagram id="CanSatGS_V3_Detailed" name="GNS_V3_Deep_Dive">
+    <mxGraphModel dx="4296" dy="1542" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="lane_hw" parent="1" style="swimlane;horizontal=1;startSize=40;fillColor=#f5f5f5;strokeColor=#666666;" value="Hardware &amp; OS Layer" vertex="1">
+          <mxGeometry height="190" width="1610" x="-300" as="geometry" />
+        </mxCell>
+        <mxCell id="hw_xbee" parent="lane_hw" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" value="XBee Radio (RX Data)" vertex="1">
+          <mxGeometry height="60" width="100" x="10" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="hw_buffer" parent="lane_hw" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="OS Serial Buffer (COM Port)" vertex="1">
+          <mxGeometry height="60" width="140" x="170" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="hw_write_buffer" parent="lane_hw" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="TX Buffer" vertex="1">
+          <mxGeometry height="60" width="100" x="1150" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_fe" parent="1" style="swimlane;horizontal=1;startSize=40;fillColor=#d5e8d4;strokeColor=#82b366;" value="Frontend (Browser Engine)" vertex="1">
+          <mxGeometry height="400" width="1480" x="150" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_ws" parent="lane_fe" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" value="WebSocket API (onmessage)" vertex="1">
+          <mxGeometry height="60" width="140" x="265" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_parse" parent="lane_fe" style="rounded=1;whiteSpace=wrap;html=1;" value="JSON.parse(event.data)" vertex="1">
+          <mxGeometry height="40" width="140" x="400" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_dispatch" parent="lane_fe" style="rounded=1;whiteSpace=wrap;html=1;fontStyle=1" value="onTelemetry(data) Dispatcher" vertex="1">
+          <mxGeometry height="50" width="140" x="400" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_dom" parent="lane_fe" style="rounded=1;whiteSpace=wrap;html=1;" value="DOM Update (Text/Tables)" vertex="1">
+          <mxGeometry height="40" width="120" x="200" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_chart" parent="lane_fe" style="rounded=1;whiteSpace=wrap;html=1;" value="ECharts Instance .setOption({series...})" vertex="1">
+          <mxGeometry height="40" width="120" x="410" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_map" parent="lane_fe" style="rounded=1;whiteSpace=wrap;html=1;" value="Leaflet Map .setLatLng([...])" vertex="1">
+          <mxGeometry height="40" width="120" x="620" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_btn" parent="lane_fe" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;" value="Button Click / Input" vertex="1">
+          <mxGeometry height="40" width="140" x="1020" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="fe_fetch" parent="lane_fe" style="rounded=1;whiteSpace=wrap;html=1;" value="fetch(&#39;/api/command&#39;, ...) POST JSON" vertex="1">
+          <mxGeometry height="60" width="160" x="1010" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_be" parent="lane_fe" style="swimlane;horizontal=1;startSize=40;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Backend (Python / FastAPI / Threading)" vertex="1">
+          <mxGeometry height="520" width="1610" x="-450" y="-500" as="geometry" />
+        </mxCell>
+        <mxCell id="be_thread" parent="lane_be" style="swimlane;whiteSpace=wrap;html=1;startSize=20;dashed=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Thread: serial_read_thread" vertex="1">
+          <mxGeometry height="140" width="220" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="be_read_loop" parent="be_thread" style="rhombus;whiteSpace=wrap;html=1;" value="Loop: while True" vertex="1">
+          <mxGeometry height="40" width="100" x="60" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="be_readline" parent="be_thread" style="rounded=1;whiteSpace=wrap;html=1;" value="serial.readline() (Blocking)" vertex="1">
+          <mxGeometry height="40" width="120" x="50" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="be_async" parent="lane_be" style="swimlane;whiteSpace=wrap;html=1;startSize=20;fillColor=#ffffff;strokeColor=#000000;" value="Asyncio Event Loop (Main Thread)" vertex="1">
+          <mxGeometry height="440" width="700" x="310" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="be_handler" parent="be_async" style="rounded=1;whiteSpace=wrap;html=1;fontStyle=1" value="handle_telemetry_line(raw_str)" vertex="1">
+          <mxGeometry height="40" width="200" x="10" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="be_parser" parent="be_async" style="rounded=1;whiteSpace=wrap;html=1;" value="1. Parse &amp; Validate (Pydantic Model)" vertex="1">
+          <mxGeometry height="50" width="140" x="40" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="be_formatter" parent="be_async" style="rounded=1;whiteSpace=wrap;html=1;" value="2. Format CSV String (Strict Spec)" vertex="1">
+          <mxGeometry height="50" width="140" x="20" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="be_logger_csv" parent="be_async" style="rounded=1;whiteSpace=wrap;html=1;" value="3. Append to File" vertex="1">
+          <mxGeometry height="40" width="140" x="20" y="290" as="geometry" />
+        </mxCell>
+        <mxCell id="be_json_conv" parent="be_async" style="rounded=1;whiteSpace=wrap;html=1;" value="4. Convert to Dict/JSON" vertex="1">
+          <mxGeometry height="50" width="150" x="450" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="be_ring" parent="be_async" style="rounded=1;whiteSpace=wrap;html=1;" value="Append to Ring Buffer (Memory Log)" vertex="1">
+          <mxGeometry height="40" width="150" x="400" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="be_ws_mgr" parent="be_async" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="5. WebSocket Broadcast (Iterate Clients)" vertex="1">
+          <mxGeometry height="50" width="150" x="400" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="be_api" parent="be_async" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;" value="FastAPI Route @app.post" vertex="1">
+          <mxGeometry height="50" width="140" x="720" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="be_cmd_fmt" parent="be_async" style="rounded=1;whiteSpace=wrap;html=1;" value="Format Command CMD,1043,..." vertex="1">
+          <mxGeometry height="50" width="140" x="720" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="be_q" parent="be_async" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#f8cecc;strokeColor=#b85450;" value="asyncio.Queue (uplink_q)" vertex="1">
+          <mxGeometry height="40" width="140" x="720" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="be_writer_task" parent="be_async" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;" value="Task: serial_writer_worker" vertex="1">
+          <mxGeometry height="50" width="160" x="720" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="be_write_call" parent="be_async" style="rounded=1;whiteSpace=wrap;html=1;" value="_serial_port.write(bytes)" vertex="1">
+          <mxGeometry height="40" width="160" x="720" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="be_async" source="be_handler" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="be_parser">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="be_async" source="be_parser" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="be_formatter">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="be_async" source="be_parser" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="be_json_conv">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="110" y="90" />
+              <mxPoint x="260" y="90" />
+              <mxPoint x="260" y="75" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="be_async" source="be_formatter" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="be_logger_csv">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="be_async" source="be_json_conv" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="be_ring">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="be_async" source="be_json_conv" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="be_ws_mgr">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="475" y="140" />
+              <mxPoint x="370" y="140" />
+              <mxPoint x="370" y="250" />
+              <mxPoint x="475" y="250" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="u3" edge="1" parent="be_async" source="be_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="be_cmd_fmt">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="u4" edge="1" parent="be_async" source="be_cmd_fmt" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="be_q">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="u5" edge="1" parent="be_async" source="be_q" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="be_writer_task">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="u6" edge="1" parent="be_async" source="be_writer_task" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="be_write_call">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="fs_csv" parent="be_async" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=center;fillColor=#f5f5f5;" value="FS: Flight_XXXX.csv" vertex="1">
+          <mxGeometry height="60" width="120" x="30" y="370" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="be_async" source="be_logger_csv" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="fs_csv">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="fs_json" parent="be_async" style="shape=note;whiteSpace=wrap;html=1;size=14;verticalAlign=top;align=center;fillColor=#dae8fc;" value="FS: ground.jsonl" vertex="1">
+          <mxGeometry height="60" width="120" x="560" y="370" as="geometry" />
+        </mxCell>
+        <mxCell id="e9b" edge="1" parent="be_async" source="be_ring" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" target="fs_json">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="475" y="170" />
+              <mxPoint x="645" y="170" />
+              <mxPoint x="645" y="370" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="sFET_-Hvpoz_D9SsrEpG-2" edge="1" parent="lane_be" source="be_readline" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="be_handler">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" edge="1" parent="lane_fe" source="be_ws_mgr" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="fe_ws">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="u2" edge="1" parent="lane_fe" source="fe_fetch" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="be_api">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1090" y="-50" />
+              <mxPoint x="1090" y="-50" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="hw_xbee" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="hw_buffer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="hw_buffer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="be_readline">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" edge="1" parent="1" source="fe_ws" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="fe_parse">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" edge="1" parent="1" source="fe_parse" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="fe_dispatch">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14a" edge="1" parent="1" source="fe_dispatch" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="fe_dom">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14b" edge="1" parent="1" source="fe_dispatch" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="fe_chart">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14c" edge="1" parent="1" source="fe_dispatch" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="fe_map">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="u1" edge="1" parent="1" source="fe_btn" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="fe_fetch">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="u7" edge="1" parent="1" source="be_write_call" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="hw_write_buffer">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1240" y="620" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
