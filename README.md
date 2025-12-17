@@ -129,12 +129,6 @@ The backend exposes several endpoints for control and integration:
 
 ---
 
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
----
-
 ## Commercial Off-The-Shelf (COTS) Software
 
 This project utilizes the following third-party software packages and libraries:
