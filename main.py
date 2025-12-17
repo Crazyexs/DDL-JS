@@ -61,12 +61,27 @@ CSV_CURRENT = DATA_DIR / f"Flight_{TEAM_ID:04}.csv"
 # A list of common connection speeds to choose from.
 BAUD_PRESETS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 921600]
 
-# This is the first line of the CSV file (the column names).
-CSV_HEADER = (
-    "TEAM_ID,MISSION_TIME,PACKET_COUNT,MODE,STATE,ALTITUDE,TEMPERATURE,PRESSURE,VOLTAGE,CURRENT,"
-    "GYRO_R,GYRO_P,GYRO_Y,ACCEL_R,ACCEL_P,ACCEL_Y,GPS_TIME,GPS_ALTITUDE,GPS_LATITUDE,GPS_LONGITUDE,GPS_SATS,CMD_ECHO,,,"
-    "HEADING"
-)
+# ===================== TELEMETRY CONFIG (Dynamic Loading) =====================
+# We load the structure of the CSV from 'telemetry_config.json'
+# This allows you to change the order of columns without changing the code.
+def load_telemetry_config():
+    config_path = ROOT_DIR / "telemetry_config.json"
+    if not config_path.exists():
+        # Fallback default if file is missing
+        print("Warning: telemetry_config.json not found, using default.")
+        return [
+            { "csv_header": "TEAM_ID", "internal_key": "team_id", "type": "int" },
+            { "csv_header": "MISSION_TIME", "internal_key": "mission_time", "type": "str" },
+            # ... (shortened fallback for safety, but ideally the file always exists)
+        ]
+    with open(config_path, "r") as f:
+        return json.load(f)
+
+TELEMETRY_CONFIG = load_telemetry_config()
+
+# Build the CSV Header string dynamically from the config
+# e.g. "TEAM_ID,MISSION_TIME,..."
+CSV_HEADER = ",".join([item.get("csv_header", "") for item in TELEMETRY_CONFIG])
 
 # ===================== LOGGING (Keeping records) =====================
 # This sets up a system to save important messages to a file named 'ground.jsonl'.
@@ -101,29 +116,32 @@ class IngestBody(BaseModel):
     line: str
 
 class Telemetry(BaseModel):
-    """The structure of a single packet of data from the CanSat."""
-    team_id: int
-    mission_time: str
-    packet_count: int
-    mode: str
-    state: str
-    altitude_m: float
-    temperature_c: float
-    pressure_kpa: float
-    voltage_v: float
-    current_a: float
-    gyro_r_dps: float
-    gyro_p_dps: float
-    gyro_y_dps: float
-    accel_r_dps2: float
-    accel_p_dps2: float
-    accel_y_dps2: float
-    gps_time: str
-    gps_altitude_m: float
-    gps_lat: float
-    gps_lon: float
-    gps_sats: int
-    cmd_echo: str
+    """
+    The structure of a single packet of data from the CanSat.
+    NOTE: 'internal_key' in telemetry_config.json MUST match these field names.
+    """
+    team_id: int = 0
+    mission_time: str = "00:00:00"
+    packet_count: int = 0
+    mode: str = "F"
+    state: str = "BOOT"
+    altitude_m: float = 0.0
+    temperature_c: float = 0.0
+    pressure_kpa: float = 0.0
+    voltage_v: float = 0.0
+    current_a: float = 0.0
+    gyro_r_dps: float = 0.0
+    gyro_p_dps: float = 0.0
+    gyro_y_dps: float = 0.0
+    accel_r_dps2: float = 0.0
+    accel_p_dps2: float = 0.0
+    accel_y_dps2: float = 0.0
+    gps_time: str = "00:00:00"
+    gps_altitude_m: float = 0.0
+    gps_lat: float = 0.0
+    gps_lon: float = 0.0
+    gps_sats: int = 0
+    cmd_echo: str = "—"
     
     # Optional extra data
     heading: Optional[float] = None
@@ -320,92 +338,103 @@ async def broadcast_ws(payload: dict):
 async def handle_telemetry_line(raw: str):
     """
     This is the core function that handles each line of data received.
-    1. It splits the CSV string.
-    2. It validates the data.
-    3. It saves the data to a file.
-    4. It sends the data to the web interface.
+    It uses 'TELEMETRY_CONFIG' to know which column is which.
     """
     parts = [p.strip() for p in raw.split(",")]
     
-    # Check if we have enough data fields (minimum 22 required)
-    if len(parts) < 22:
+    # We check if we have enough columns based on our config
+    # Note: Optional fields at the end might be missing, so we allow slightly fewer.
+    min_required = len([x for x in TELEMETRY_CONFIG if not x.get("optional", False)])
+    
+    if len(parts) < min_required:
         ring.append(json.dumps({"bad_line": raw}))
-        log_json(level="warn", event="telemetry_short", len=len(parts))
+        log_json(level="warn", event="telemetry_short", len=len(parts), required=min_required)
         return
 
-    # Helper functions to safely convert strings to numbers
-    # If a value is missing or broken, it uses a default value (0.0 or 0)
-    s_f = lambda i, d=0.0: float(parts[i]) if len(parts) > i and parts[i] else d
-    s_i = lambda i, d=0: int(parts[i]) if len(parts) > i and parts[i] else d
-    s_s = lambda i, d='': str(parts[i]) if len(parts) > i and parts[i] else d
+    # 1) Parse data dynamically using the config
+    parsed_data = {}     # Holds the values for the Telemetry object (e.g., altitude_m=50.2)
+    clean_parts = []     # Holds the clean strings for the CSV file
     
-    # Create the Telemetry object with all the data
-    tel = Telemetry(
-        team_id=s_i(0, TEAM_ID),
-        mission_time=s_s(1),
-        packet_count=s_i(2),
-        mode=s_s(3),
-        state=s_s(4),
-        altitude_m=s_f(5),
-        temperature_c=s_f(6),
-        pressure_kpa=s_f(7),
-        voltage_v=s_f(8),
-        current_a=s_f(9),
-        gyro_r_dps=s_f(10),
-        gyro_p_dps=s_f(11),
-        gyro_y_dps=s_f(12),
-        accel_r_dps2=s_f(13),
-        accel_p_dps2=s_f(14),
-        accel_y_dps2=s_f(15),
-        gps_time=s_s(16),
-        gps_altitude_m=s_f(17),
-        gps_lat=s_f(18),
-        gps_lon=s_f(19),
-        gps_sats=s_i(20),
-        cmd_echo=s_s(21),
-        # Optional data
-        heading=s_f(22),
-        # Calculated fields for the Ground Station
-        gs_ts_utc=now_utc_iso(),
-        gs_rx_count=state.rx_count + 1,
-        gs_loss_total=state.loss_count
-    )
+    # Loop through every column defined in telemetry_config.json
+    for i, cfg in enumerate(TELEMETRY_CONFIG):
+        key = cfg.get("internal_key") # e.g., "altitude_m"
+        dtype = cfg.get("type")       # e.g., "float"
+        
+        # Get the raw string value from the CSV line
+        val_str = parts[i] if i < len(parts) else ""
+        val_str = val_str.strip()
+        
+        # SKIP columns (like empty spaces in the spec)
+        if dtype == "skip":
+            clean_parts.append("") # Keep the empty space in the saved CSV
+            continue
+            
+        # Convert the string to the correct type (int/float/str)
+        value = None
+        clean_str = val_str # Default for string types
+        
+        try:
+            if dtype == "int":
+                value = int(val_str) if val_str else 0
+                clean_str = str(value)
+            elif dtype == "float":
+                value = float(val_str) if val_str else 0.0
+                # Format floats nicely for the CSV file (2 decimal places usually)
+                if key and ("lat" in key or "lon" in key): 
+                    clean_str = f"{value:.5f}" # GPS needs more precision
+                elif key and "pressure" in key:
+                    clean_str = f"{value:.3f}"
+                else:
+                    clean_str = f"{value:.2f}"
+            else: # string
+                value = val_str
+                clean_str = val_str
+        except ValueError:
+            # If conversion fails (e.g. text in a number field), use defaults
+            if dtype == "int": value = 0
+            elif dtype == "float": value = 0.0
+            else: value = ""
+            clean_str = str(value)
 
-    # 2) Reconstruct a CLEAN CSV line for saving to file
-    # We re-format the numbers to ensure they look consistent (e.g., 2 decimal places)
-    clean_csv = (
-        f"{tel.team_id},{tel.mission_time},{tel.packet_count},{tel.mode},{tel.state},"
-        f"{tel.altitude_m:.2f},{tel.temperature_c:.1f},{tel.pressure_kpa:.2f},"
-        f"{tel.voltage_v:.2f},{tel.current_a:.2f},"
-        f"{tel.gyro_r_dps:.2f},{tel.gyro_p_dps:.2f},{tel.gyro_y_dps:.2f},"
-        f"{tel.accel_r_dps2:.2f},{tel.accel_p_dps2:.2f},{tel.accel_y_dps2:.2f},"
-        f"{tel.gps_time},{tel.gps_altitude_m:.2f},{tel.gps_lat:.5f},{tel.gps_lon:.5f},{tel.gps_sats},"
-        f"{tel.cmd_echo},,{tel.heading if tel.heading is not None else ''}"
-    )
+        # Save to our parsed data dictionary (if it maps to a Telemetry field)
+        if key:
+            parsed_data[key] = value
+            
+        # Add to the clean CSV list
+        clean_parts.append(clean_str)
 
-    # 3) Append the clean line to the CSV file
+    # 2) Create the Telemetry object
+    # We add the Ground Station calculated fields here
+    parsed_data["gs_ts_utc"] = now_utc_iso()
+    parsed_data["gs_rx_count"] = state.rx_count + 1
+    parsed_data["gs_loss_total"] = state.loss_count
+    parsed_data["gs_raw_line"] = raw
+    
+    # This '**parsed_data' magic passes the dictionary as arguments
+    tel = Telemetry(**parsed_data)
+
+    # 3) Reconstruct the CLEAN CSV line
+    clean_csv = ",".join(clean_parts)
+
+    # 4) Append to the CSV file
     if state.csv_ready:
         with CSV_CURRENT.open("a", encoding="utf-8", newline="") as f:
             f.write(clean_csv + "\r\n")
 
-    # 4) Update packet counters and check for packet loss
+    # 5) Update counters
     state.rx_count += 1
-    try:
-        pkt = int(parts[2])
-    except Exception:
-        pkt = 0
+    # Try to find packet count to check for loss
+    # We look for 'packet_count' in our parsed data
+    pkt = parsed_data.get("packet_count", 0)
     
-    # If the new packet number skipped some numbers, we lost packets
     if state.last_pkt is not None and pkt > state.last_pkt + 1:
         state.loss_count += (pkt - state.last_pkt - 1)
     state.last_pkt = pkt
 
-    # 5) Send the data to the web interface
+    # 6) Send to UI
     payload = tel.dict()
-    payload['gs_raw_line'] = raw # Send the original raw line too, just in case
+    payload['gs_raw_line'] = raw
     await broadcast_ws(payload)
-    
-    # Save to memory log
     ring.append(json.dumps({"telemetry": payload}))
 
 # ===================== SIMULATION MODE (Testing) =====================
@@ -477,33 +506,48 @@ def generate_dummy_telemetry_line() -> str:
             state = 'DESCENT'
     dummy_state["last_alt"] = altitude
 
-    # Construct the fake CSV line
-    line = [
-        str(TEAM_ID),
-        mission_time,
-        str(pkt),
-        'F', # Mode
-        state,
-        f"{altitude:.2f}",
-        f"{temp:.2f}",
-        f"{101.325 * math.pow(1 - 2.25577e-5 * altitude, 5.25588):.3f}", # Pressure
-        f"{voltage:.2f}",
-        f"{current:.3f}",
-        f"{(random.random() - 0.5) * 20:.3f}", # Gyro R
-        f"{(random.random() - 0.5) * 20:.3f}", # Gyro P
-        f"{180 + (random.random() - 0.5) * 40:.3f}", # Gyro Y
-        f"{(random.random() - 0.5) * 2:.3f}", # Accel R
-        f"{(random.random() - 0.5) * 2:.3f}", # Accel P
-        f"{9.8 + (random.random() - 0.5):.3f}", # Accel Y
-        datetime.now(timezone.utc).strftime("%H:%M:%S"), # GPS Time
-        f"{altitude + 10:.2f}", # GPS Alt
-        f"{dummy_state['lat']:.4f}",
-        f"{dummy_state['lon']:.4f}",
-        str(random.randint(8, 12)), # GPS Sats
-        "CMD_OK" if pkt % 10 != 0 else "CX,ON",
-        f"{(pkt * 5) % 360:.2f}", # Heading
-    ]
-    return ",".join(line)
+    # Dictionary of all current dummy values
+    val_map = {
+        "team_id": str(TEAM_ID),
+        "mission_time": mission_time,
+        "packet_count": str(pkt),
+        "mode": 'F',
+        "state": state,
+        "altitude_m": f"{altitude:.2f}",
+        "temperature_c": f"{temp:.2f}",
+        "pressure_kpa": f"{101.325 * math.pow(1 - 2.25577e-5 * altitude, 5.25588):.3f}",
+        "voltage_v": f"{voltage:.2f}",
+        "current_a": f"{current:.3f}",
+        "gyro_r_dps": f"{(random.random() - 0.5) * 20:.3f}",
+        "gyro_p_dps": f"{(random.random() - 0.5) * 20:.3f}",
+        "gyro_y_dps": f"{180 + (random.random() - 0.5) * 40:.3f}",
+        "accel_r_dps2": f"{(random.random() - 0.5) * 2:.3f}",
+        "accel_p_dps2": f"{(random.random() - 0.5) * 2:.3f}",
+        "accel_y_dps2": f"{9.8 + (random.random() - 0.5):.3f}",
+        "gps_time": datetime.now(timezone.utc).strftime("%H:%M:%S"),
+        "gps_altitude_m": f"{altitude + 10:.2f}",
+        "gps_lat": f"{dummy_state['lat']:.4f}",
+        "gps_lon": f"{dummy_state['lon']:.4f}",
+        "gps_sats": str(random.randint(8, 12)),
+        "cmd_echo": "CMD_OK" if pkt % 10 != 0 else "CX,ON",
+        "heading": f"{(pkt * 5) % 360:.2f}",
+    }
+
+    # Build the line based on the config order
+    line_parts = []
+    for cfg in TELEMETRY_CONFIG:
+        key = cfg.get("internal_key")
+        dtype = cfg.get("type")
+        
+        if dtype == "skip":
+            line_parts.append("")
+        elif key in val_map:
+            line_parts.append(val_map[key])
+        else:
+            # Default fallback for missing keys
+            line_parts.append("0")
+
+    return ",".join(line_parts)
 
 async def dummy_data_sender():
     """Generates and processes dummy data once per second."""
