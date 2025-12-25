@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Deque, Optional, Set, List
 
+import aiofiles
 import serial
 from serial import SerialException
 import serial.tools.list_ports
@@ -35,7 +36,7 @@ TEAM_ID = 1043
 # This is the default USB port the computer uses to talk to the radio.
 # On Windows it is usually "COM3", "COM4", etc.
 # On Linux/Mac it looks like "/dev/ttyUSB0".
-DEFAULT_PORT = "COM3"
+DEFAULT_PORT = "/dev/cu.usbserial-A9KZF1D9"
 
 # This is the speed of the connection. Both the radio and computer must match this number.
 DEFAULT_BAUD = 115200
@@ -80,8 +81,9 @@ def load_telemetry_config():
 TELEMETRY_CONFIG = load_telemetry_config()
 
 # Build the CSV Header string dynamically from the config
-# e.g. "TEAM_ID,MISSION_TIME,..."
-CSV_HEADER = ",".join([item.get("csv_header", "") for item in TELEMETRY_CONFIG])
+# We also add Ground Station specific columns at the end
+GS_HEADERS = ["GS_TIMESTAMP", "GS_PACKET_RX", "GS_PACKET_LOSS"]
+CSV_HEADER = ",".join([item.get("csv_header", "") for item in TELEMETRY_CONFIG] + GS_HEADERS)
 
 # ===================== LOGGING (Keeping records) =====================
 # This sets up a system to save important messages to a file named 'ground.jsonl'.
@@ -160,6 +162,7 @@ class GSState:
     rx_count: int = 0           # Total packets received
     loss_count: int = 0         # Total packets lost
     last_pkt: Optional[int] = None # The ID number of the last packet we saw
+    last_rx_time: float = 0.0   # Timestamp of the last received packet
     csv_ready: bool = False     # Is the CSV file ready to be written to?
     last_cmd: str = "—"         # The last command we sent
 
@@ -313,15 +316,15 @@ async def broadcast_ws(payload: dict):
     dead = []
     
     # Create a list of connected clients for logging
-    client_list = []
-    for ws in ws_clients:
-        c = ws.client
-        if c:
-            client_list.append(f"{c.host}:{c.port}")
-        else:
-            client_list.append("unknown")
+    # client_list = []
+    # for ws in ws_clients:
+    #     c = ws.client
+    #     if c:
+    #         client_list.append(f"{c.host}:{c.port}")
+    #     else:
+    #         client_list.append("unknown")
             
-    log_json(event="ws_broadcast", clients=client_list)
+    # log_json(event="ws_broadcast", clients=client_list)
     
     # Send the message to each client
     for ws in list(ws_clients):
@@ -414,21 +417,37 @@ async def handle_telemetry_line(raw: str):
     tel = Telemetry(**parsed_data)
 
     # 3) Reconstruct the CLEAN CSV line
+    # We add the Ground Station metadata to the end of the clean CSV parts
+    clean_parts.append(parsed_data["gs_ts_utc"])
+    clean_parts.append(str(parsed_data["gs_rx_count"]))
+    clean_parts.append(str(parsed_data["gs_loss_total"]))
+    
     clean_csv = ",".join(clean_parts)
 
     # 4) Append to the CSV file
     if state.csv_ready:
-        with CSV_CURRENT.open("a", encoding="utf-8", newline="") as f:
-            f.write(clean_csv + "\r\n")
+        async with aiofiles.open(CSV_CURRENT, "a", encoding="utf-8", newline="") as f:
+            await f.write(clean_csv + "\r\n")
 
     # 5) Update counters
     state.rx_count += 1
-    # Try to find packet count to check for loss
-    # We look for 'packet_count' in our parsed data
+    
+    # Packet Loss Calculation (Time-based)
+    now = time.time()
+    if state.last_rx_time > 0:
+        dt = now - state.last_rx_time
+        # If gap is > 1.5s, we assume we missed packets (assuming 1Hz rate)
+        if dt > 1.5:
+            missed = int(round(dt)) - 1
+            if missed > 0:
+                state.loss_count += missed
+    state.last_rx_time = now
+
+    # Try to find packet count (Legacy / Optional check)
     pkt = parsed_data.get("packet_count", 0)
     
-    if state.last_pkt is not None and pkt > state.last_pkt + 1:
-        state.loss_count += (pkt - state.last_pkt - 1)
+    # if state.last_pkt is not None and pkt > state.last_pkt + 1:
+    #     state.loss_count += (pkt - state.last_pkt - 1)
     state.last_pkt = pkt
 
     # 6) Send to UI
