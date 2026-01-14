@@ -172,23 +172,51 @@ if (!window.__DGS_BOOTED__) {
   
   // ---------- CHART LOGIC (Graphs) ----------
   function getChartColors() {
-    return [getCssVar('--chart-color-1'), getCssVar('--chart-color-2')];
+    return [getCssVar('--chart-color-1'), getCssVar('--chart-color-2'), getCssVar('--warn')];
   }
 
   // Creates a new chart using ECharts library
-  function makeMulti(elId, names) {
+  function makeMulti(elId, names, opts = {}) {
     const elc = document.getElementById(elId);
-    if (!elc) return null;
+    if (!elc) {
+        console.error("makeMulti: Element not found:", elId);
+        return null;
+    }
+    console.log("makeMulti: Initializing chart:", elId);
     const inst = echarts.init(elc);
     const colors = getChartColors();
+    const { smooth = false, stack = undefined, area = false } = opts;
+    const gridColor = getCssVar('--muted');
+
     inst.setOption({
-      grid: { left: 44, right: 18, top: 38, bottom: 28 },
+      grid: { left: 35, right: 20, top: 30, bottom: 20, containLabel: true },
       animation: false,
-      xAxis: { type: 'category', data: [], axisLabel: { show: false } },
-      yAxis: { type: 'value', scale: true, axisLabel: { color: getCssVar('--muted') } },
-      legend: { show: false, data: names, top: 0, textStyle: { color: getCssVar('--fg') } }, // Keep legend data, but hide it
-      series: names.map((n, i) => ({ type: 'line', name: n, showSymbol: false, data: [], lineStyle: { color: colors[i] } })),
-      tooltip: { trigger: 'axis' }
+      xAxis: { 
+        type: 'category', 
+        data: [], 
+        axisLabel: { show: false },
+        splitLine: { show: true, lineStyle: { color: gridColor, opacity: 0.25 } } // Vertical grid lines
+      },
+      yAxis: { 
+        type: 'value', 
+        scale: true, 
+        axisLabel: { color: gridColor, fontSize: 11 }, 
+        splitLine: { lineStyle: { color: gridColor, opacity: 0.25 } } 
+      },
+      legend: { show: true, data: names, top: 0, textStyle: { color: getCssVar('--fg'), fontSize: 11 }, icon: 'roundRect' },
+      series: names.map((n, i) => ({ 
+          type: 'line', 
+          name: n, 
+          smooth: smooth,
+          stack: stack,
+          areaStyle: (area && i===0) ? { opacity: 0.15 } : undefined,
+          showSymbol: true, // Show dots
+          symbolSize: 4,    // Size of the dots
+          data: [], 
+          lineStyle: { width: 2.5, color: colors[i % colors.length] },
+          itemStyle: { color: colors[i % colors.length] }
+      })),
+      tooltip: { trigger: 'axis', backgroundColor: 'rgba(20, 20, 20, 0.9)', textStyle: { color: '#fff' }, borderWidth: 0 }
     });
     return inst;
   }
@@ -202,7 +230,9 @@ if (!window.__DGS_BOOTED__) {
     opt.xAxis[0].data.push(label);
     
     // Add new Y-axis values (Data)
-    (Array.isArray(values) ? values : [values]).forEach((v, i) => opt.series[i].data.push(v));
+    (Array.isArray(values) ? values : [values]).forEach((v, i) => {
+        if (opt.series[i]) opt.series[i].data.push(v);
+    });
     
     // Keep chart size fixed (remove old points if too many)
     const max = 120;
@@ -219,19 +249,29 @@ if (!window.__DGS_BOOTED__) {
     
     for (const chart of Object.values(st.charts)) {
       if (!chart) continue;
+      const opt = chart.getOption();
       chart.setOption({
-        yAxis: { axisLabel: { color: muted } },
+        xAxis: { splitLine: { lineStyle: { color: muted, opacity: 0.25 } } },
+        yAxis: { axisLabel: { color: muted }, splitLine: { lineStyle: { color: muted, opacity: 0.25 } } },
         legend: { textStyle: { color: fg } },
-        series: chart.getOption().series.map((s, i) => ({
+        series: opt.series.map((s, i) => ({
           name: s.name,
-          lineStyle: { color: colors[i] }
+          lineStyle: { color: colors[i % colors.length] },
+          itemStyle: { color: colors[i % colors.length] }
         }))
       });
     }
   }
 
   function initCharts() {
-    st.charts.altitude = makeMulti('chart-altitude', ['Altitude']);
+    // Altitude: Smooth + Area fill
+    st.charts.altitude = makeMulti('chart-altitude', ['Altitude'], { smooth: true, area: true });
+    // Power: Smooth
+    st.charts.power = makeMulti('chart-power', ['Voltage', 'Current'], { smooth: true });
+    // Accel: Stacked
+    st.charts.accel = makeMulti('chart-accel', ['Acc X', 'Acc Y', 'Acc Z'], { stack: 'Total' });
+    // Gyro: Stacked
+    st.charts.gyro = makeMulti('chart-gyro', ['Gyr X', 'Gyr Y', 'Gyr Z'], { stack: 'Total' });
   }
   
 
@@ -299,6 +339,9 @@ if (!window.__DGS_BOOTED__) {
     // 7. Update Charts
     const label = t.mission_time || hms();
     pushChart(st.charts.altitude, label, [t.altitude_m]);
+    pushChart(st.charts.power, label, [t.voltage_v, t.current_a]);
+    pushChart(st.charts.accel, label, [t.accel_r_dps2, t.accel_p_dps2, t.accel_y_dps2]);
+    pushChart(st.charts.gyro, label, [t.gyro_r_dps, t.gyro_p_dps, t.gyro_y_dps]);
 
     // 8. Update Map
     if (t.gps_lat && t.gps_lon && typeof t.gps_lat === 'number' && typeof t.gps_lon === 'number') {
@@ -503,7 +546,6 @@ if (!window.__DGS_BOOTED__) {
   // ---------- INITIALIZATION (Startup) ----------
   function init() {
     initMap();
-    initCharts();
     fillCmds();
     initTheme();
     info('DAEDALUS Ground Station Initialized.');
@@ -512,7 +554,8 @@ if (!window.__DGS_BOOTED__) {
     // Force map to resize correctly after loading
     setTimeout(() => {
         window.dispatchEvent(new Event('resize'));
-    }, 500);
+        initCharts(); // Delay chart init to ensure CSS layout is ready
+    }, 200);
   }
   window.addEventListener('DOMContentLoaded', init);
 

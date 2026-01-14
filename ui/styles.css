@@ -84,7 +84,7 @@ body {
   background: var(--bg);
   color: var(--fg);
   font: 500 var(--font-base)/var(--line) ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-  overflow: hidden;
+  overflow: auto; /* Changed from hidden to auto */
   display: flex;
   flex-direction: column;
 }
@@ -156,7 +156,26 @@ a { color: var(--accent); text-decoration: none; }
   grid-template-rows: 1fr 1fr;
   gap: 10px;
   padding: 10px;
+  overflow-y: auto; /* Allow scrolling if content is too tall */
 }
+
+/* Responsive Breakpoint */
+@media (max-width: 1200px) {
+  .screen {
+    grid-template-columns: 1fr; /* Single column */
+    grid-template-rows: auto;
+    overflow-y: scroll; /* Force scrollbar */
+  }
+  .values-panel { grid-column: 1; grid-row: auto; }
+  .map-panel { grid-column: 1; grid-row: auto; height: 500px; }
+  .logs-panel { grid-column: 1; grid-row: auto; height: 400px; }
+  
+  /* Make charts stack if really narrow */
+  @media (max-width: 800px) {
+    .charts-grid { grid-template-columns: 1fr; }
+  }
+}
+
 .values-panel { grid-column: 1; grid-row: 1 / span 2; }
 .map-panel { grid-column: 2; grid-row: 1; }
 .logs-panel { grid-column: 2; grid-row: 2; }
@@ -179,8 +198,13 @@ a { color: var(--accent); text-decoration: none; }
 .chip.batt { color: color-mix(in oklab, var(--fg) 85%, #6aa8ff 15%); border-color: color-mix(in oklab, var(--accent) 35%, var(--edge) 65%); }
 
 /* Chart grids */
-.charts-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; min-height: 0; flex: 1; padding: 4px; grid-auto-rows: 1fr; }
+.charts-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; min-height: 250px; flex: 1; padding: 4px; grid-auto-rows: 1fr; }
 .charts-grid.horizontal { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
+
+/* Ensure chartbox fills the grid cell */
+.charts-grid .chartbox { height: 100%; min-height: 200px; display: flex; flex-direction: column; }
+/* Ensure the chart div inside takes full space */
+.charts-grid .chartbox > div:last-child { flex: 1; min-height: 0; }
 
 /* Chart card */
 .chartbox {
@@ -195,7 +219,7 @@ a { color: var(--accent); text-decoration: none; }
 }
 .charttitle { font-size: 13px; letter-spacing: .02em; color: color-mix(in oklab, var(--fg) 85%, #9ec2ff 15%); opacity: .9; margin-bottom: 6px; }
 .chartbox > div:last-child { flex: 1 1 auto; min-height: 0; height: 100%; }
-#chart-altitude,#chart-power,#chart-environment,#chart-gyro,#chart-accel,#chart-mag { width: 100%; height: 100%; min-height: 0; }
+#chart-altitude,#chart-power,#chart-environment,#chart-gyro,#chart-accel,#chart-mag { width: 100%; height: 100%; min-height: 150px; }
 
 /* Map + mission */
 .map {
@@ -482,9 +506,9 @@ a { color: var(--accent); text-decoration: none; }
 .kv-group .v-group span {
   font-weight: 700;
 }
-.kv-group .v-group b {
-  color: var(--accent);
-}
+.kv-group .v-group span:nth-child(1) b { color: var(--chart-color-1); }
+.kv-group .v-group span:nth-child(2) b { color: var(--chart-color-2); }
+.kv-group .v-group span:nth-child(3) b { color: var(--warn); }
 
 .charttitle-wrap {
   display: flex;
