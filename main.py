@@ -460,26 +460,50 @@ async def handle_telemetry_line(raw: str):
 async def sim_sender(file_path: Path):
     """
     Reads a file with pressure data and sends it to the CanSat to simulate flight.
+    Follows sequence: SIM,ENABLE -> SIM,ACTIVATE -> Stream SIMP packets.
     """
-    # Send commands to enable simulation mode
+    # 1. Enable Simulation Mode
     await uplink_q.put(f"CMD,{TEAM_ID:04},SIM,ENABLE")
-    await asyncio.sleep(0.2)
+    log_json(event="sim_command", cmd="SIM,ENABLE")
+    await asyncio.sleep(1.0) # Wait for radio/processing
+    
+    # 2. Activate Simulation Mode
     await uplink_q.put(f"CMD,{TEAM_ID:04},SIM,ACTIVATE")
-    await asyncio.sleep(0.2)
+    log_json(event="sim_command", cmd="SIM,ACTIVATE")
+    await asyncio.sleep(1.0)
 
     if not file_path.exists():
-        log_json(level="error", event="sim_file_missing", file=str(file_path)); return
+        log_json(level="error", event="sim_file_missing", file=str(file_path))
+        # Try to find it in the current directory if full path failed
+        fallback = ROOT_DIR / "cansat_2023_simp.csv"
+        if fallback.exists():
+            file_path = fallback
+        else:
+            return
 
-    # Read the file line by line
+    log_json(event="sim_streaming_start", file=str(file_path))
+
+    # 3. Stream Pressure Data (1 Hz)
     with file_path.open("r", encoding="utf-8", errors="ignore") as f:
         for line in f:
             s = line.strip()
+            # Skip empty lines or headers
             if not s or s.startswith("#"):
                 continue
-            # Send pressure command (SIMP)
-            await uplink_q.put(f"CMD,{TEAM_ID:04},SIMP,{s}")
-            # Wait 1 second between sends (to match 1 Hz rate)
+            
+            # Logic: If the file has "CMD,..." use it as is. 
+            # If it is just a number, wrap it in the proper command structure.
+            if s.startswith("CMD,"):
+                await uplink_q.put(s)
+            elif s.isdigit():
+                await uplink_q.put(f"CMD,{TEAM_ID:04},SIMP,{s}")
+            else:
+                # Fallback for unknown formats, or maybe log a warning
+                pass
+            
+            # Wait 1 second between sends (Requirement: 1 Hz)
             await asyncio.sleep(1.0)
+            
     log_json(event="sim_complete", file=str(file_path))
 
 # ===================== DUMMY DATA GENERATOR (No Hardware Needed) =====================
@@ -720,7 +744,17 @@ async def api_command(body: CommandBody):
 @app.post("/api/sim/start")
 async def api_sim_start(file: Optional[str] = None):
     """Starts reading a simulation file."""
-    path = Path(file or "sim_pressure.csv")
+    # Default to the requirement file name
+    filename = file or "cansat_2023_simp.csv"
+    path = ROOT_DIR / filename
+    
+    # If not found at root, check if user provided a full path or just a name
+    if not path.exists() and not Path(filename).is_absolute():
+        # Check in 'data' folder just in case
+        path_data = DATA_DIR / filename
+        if path_data.exists():
+            path = path_data
+
     asyncio.create_task(sim_sender(path))
     return {"ok": True, "running": True, "file": str(path)}
 
