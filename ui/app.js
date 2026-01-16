@@ -189,12 +189,12 @@ if (!window.__DGS_BOOTED__) {
     const gridColor = getCssVar('--muted');
 
     inst.setOption({
-      grid: { left: 35, right: 20, top: 30, bottom: 20, containLabel: true },
+      grid: { left: 35, right: 20, top: 30, bottom: 30, containLabel: true },
       animation: false,
       xAxis: { 
         type: 'category', 
         data: [], 
-        axisLabel: { show: false },
+        axisLabel: { show: true, color: gridColor, fontSize: 10 },
         splitLine: { show: true, lineStyle: { color: gridColor, opacity: 0.25 } } // Vertical grid lines
       },
       yAxis: { 
@@ -266,7 +266,7 @@ if (!window.__DGS_BOOTED__) {
   function initCharts() {
     // Altitude: Smooth + Area fill
     st.charts.altitude = makeMulti('chart-altitude', ['Altitude'], { smooth: true, area: true });
-    // Power: Smooth
+    // Power: Smooth, Dual Axis (Voltage left, Current right)
     st.charts.power = makeMulti('chart-power', ['Voltage', 'Current'], { smooth: true });
     // Accel: Stacked
     st.charts.accel = makeMulti('chart-accel', ['Acc X', 'Acc Y', 'Acc Z'], { stack: 'Total' });
@@ -442,7 +442,7 @@ if (!window.__DGS_BOOTED__) {
     }
 
     // Update UI immediately to show we tried to send
-    el.lastCmd.textContent = cmd;
+    // el.lastCmd.textContent = cmd;  <-- REMOVED per user request (wait for echo)
     cmdEcho('> ' + cmd);
 
     try {
