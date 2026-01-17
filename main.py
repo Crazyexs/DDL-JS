@@ -8,6 +8,7 @@ import math
 import os
 import sys
 import json
+import csv
 import asyncio
 import logging
 import subprocess
@@ -165,6 +166,7 @@ class GSState:
     last_rx_time: float = 0.0   # Timestamp of the last received packet
     csv_ready: bool = False     # Is the CSV file ready to be written to?
     last_cmd: str = "—"         # The last command we sent
+    sim_enabled: bool = False   # Is the simulation mode enabled?
 
 state = GSState()
 ring: Deque[str] = deque(maxlen=10_000)   # Keeps the last 10,000 log messages in memory
@@ -343,7 +345,14 @@ async def handle_telemetry_line(raw: str):
     This is the core function that handles each line of data received.
     It uses 'TELEMETRY_CONFIG' to know which column is which.
     """
-    parts = [p.strip() for p in raw.split(",")]
+    # Use csv.reader to handle quoted fields correctly (e.g., "CX,ON")
+    reader = csv.reader([raw], skipinitialspace=True)
+    try:
+        parts = next(reader)
+    except StopIteration:
+        return # Empty line
+    
+    parts = [p.strip() for p in parts]
     
     # We check if we have enough columns based on our config
     # Note: Optional fields at the end might be missing, so we allow slightly fewer.
@@ -457,21 +466,12 @@ async def handle_telemetry_line(raw: str):
     ring.append(json.dumps({"telemetry": payload}))
 
 # ===================== SIMULATION MODE (Testing) =====================
-async def sim_sender(file_path: Path):
-    """
-    Reads a file with pressure data and sends it to the CanSat to simulate flight.
-    Follows sequence: SIM,ENABLE -> SIM,ACTIVATE -> Stream SIMP packets.
-    """
-    # 1. Enable Simulation Mode
-    await uplink_q.put(f"CMD,{TEAM_ID:04},SIM,ENABLE")
-    log_json(event="sim_command", cmd="SIM,ENABLE")
-    await asyncio.sleep(1.0) # Wait for radio/processing
-    
-    # 2. Activate Simulation Mode
-    await uplink_q.put(f"CMD,{TEAM_ID:04},SIM,ACTIVATE")
-    log_json(event="sim_command", cmd="SIM,ACTIVATE")
-    await asyncio.sleep(1.0)
+sim_task: Optional[asyncio.Task] = None
 
+async def sim_file_streamer(file_path: Path):
+    """
+    Streams the pressure data from the file (Step 3 of simulation).
+    """
     if not file_path.exists():
         log_json(level="error", event="sim_file_missing", file=str(file_path))
         # Try to find it in the current directory if full path failed
@@ -484,27 +484,50 @@ async def sim_sender(file_path: Path):
     log_json(event="sim_streaming_start", file=str(file_path))
 
     # 3. Stream Pressure Data (1 Hz)
-    with file_path.open("r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            s = line.strip()
-            # Skip empty lines or headers
-            if not s or s.startswith("#"):
-                continue
-            
-            # Logic: If the file has "CMD,..." use it as is. 
-            # If it is just a number, wrap it in the proper command structure.
-            if s.startswith("CMD,"):
-                await uplink_q.put(s)
-            elif s.isdigit():
-                await uplink_q.put(f"CMD,{TEAM_ID:04},SIMP,{s}")
-            else:
-                # Fallback for unknown formats, or maybe log a warning
-                pass
-            
-            # Wait 1 second between sends (Requirement: 1 Hz)
-            await asyncio.sleep(1.0)
+    try:
+        with file_path.open("r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                s = line.strip()
+                # Skip empty lines or headers
+                if not s or s.startswith("#"):
+                    continue
+                
+                # Logic: If the file has "CMD,..." use it as is. 
+                # If it is just a number, wrap it in the proper command structure.
+                if s.startswith("CMD,"):
+                    await uplink_q.put(s)
+                elif s.isdigit():
+                    await uplink_q.put(f"CMD,{TEAM_ID:04},SIMP,{s}")
+                else:
+                    # Fallback for unknown formats, or maybe log a warning
+                    pass
+                
+                # Wait 1 second between sends (Requirement: 1 Hz)
+                await asyncio.sleep(1.0)
+    except asyncio.CancelledError:
+        log_json(event="sim_cancelled", file=str(file_path))
+        raise
             
     log_json(event="sim_complete", file=str(file_path))
+
+async def sim_sender(file_path: Path):
+    """
+    Reads a file with pressure data and sends it to the CanSat to simulate flight.
+    Follows sequence: SIM,ENABLE -> SIM,ACTIVATE -> Stream SIMP packets.
+    """
+    # 1. Enable Simulation Mode
+    state.sim_enabled = True
+    await uplink_q.put(f"CMD,{TEAM_ID:04},SIM,ENABLE")
+    log_json(event="sim_command", cmd="SIM,ENABLE")
+    await asyncio.sleep(1.0) # Wait for radio/processing
+    
+    # 2. Activate Simulation Mode
+    await uplink_q.put(f"CMD,{TEAM_ID:04},SIM,ACTIVATE")
+    log_json(event="sim_command", cmd="SIM,ACTIVATE")
+    await asyncio.sleep(1.0)
+
+    # 3. Stream
+    await sim_file_streamer(file_path)
 
 # ===================== DUMMY DATA GENERATOR (No Hardware Needed) =====================
 dummy_task: Optional[asyncio.Task] = None
@@ -734,10 +757,35 @@ async def api_command(body: CommandBody):
     Receives a command from the website (e.g., "CX,ON"),
     adds the Team ID prefix, and queues it to be sent.
     """
+    cmd_upper = body.cmd.strip().upper()
+    
     # body.cmd is something like "CX,ON"
     uplink = f"CMD,{TEAM_ID:04},{body.cmd.strip()}"
     state.last_cmd = uplink
     await uplink_q.put(uplink)
+    
+    # Trigger simulation file streaming if SIM,ACTIVATE is sent manually
+    if cmd_upper == "SIM,ENABLE":
+        state.sim_enabled = True
+    elif cmd_upper == "SIM,DISABLE":
+        state.sim_enabled = False
+        global sim_task
+        if sim_task and not sim_task.done():
+            sim_task.cancel()
+            
+    if cmd_upper == "SIM,ACTIVATE":
+        if state.sim_enabled:
+            # global sim_task (already defined above if needed, but safe to re-declare or just use)
+            if sim_task and not sim_task.done():
+                pass 
+            else:
+                # Start streaming the default file
+                path = ROOT_DIR / "cansat_2023_simp.csv"
+                sim_task = asyncio.create_task(sim_file_streamer(path))
+        else:
+             log_json(level="warn", event="sim_activate_ignored", reason="sim_not_enabled")
+             # Optionally notify user via WS error, but log is sufficient for now
+            
     return {"ok": True, "sent": uplink}
 
 # ---- Simulation start ----
@@ -755,7 +803,11 @@ async def api_sim_start(file: Optional[str] = None):
         if path_data.exists():
             path = path_data
 
-    asyncio.create_task(sim_sender(path))
+    global sim_task
+    if sim_task and not sim_task.done():
+        sim_task.cancel()
+        
+    sim_task = asyncio.create_task(sim_sender(path))
     return {"ok": True, "running": True, "file": str(path)}
 
 # ---- Browser → Server telemetry ingest ----
