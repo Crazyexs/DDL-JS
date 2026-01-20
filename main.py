@@ -494,6 +494,10 @@ async def sim_file_streamer(file_path: Path):
                 
                 # Logic: If the file has "CMD,..." use it as is. 
                 # If it is just a number, wrap it in the proper command structure.
+                # Also handle the '$' placeholder as per spec.
+                if "$" in s:
+                    s = s.replace("$", f"{TEAM_ID:04}")
+
                 if s.startswith("CMD,"):
                     await uplink_q.put(s)
                 elif s.isdigit():

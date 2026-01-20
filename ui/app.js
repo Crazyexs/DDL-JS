@@ -194,16 +194,16 @@ if (!window.__DGS_BOOTED__) {
       xAxis: { 
         type: 'category', 
         data: [], 
-        axisLabel: { show: true, color: gridColor, fontSize: 10 },
+        axisLabel: { show: true, color: gridColor, fontSize: 14 },
         splitLine: { show: true, lineStyle: { color: gridColor, opacity: 0.25 } } // Vertical grid lines
       },
       yAxis: { 
         type: 'value', 
         scale: true, 
-        axisLabel: { color: gridColor, fontSize: 11 }, 
+        axisLabel: { color: gridColor, fontSize: 14 }, 
         splitLine: { lineStyle: { color: gridColor, opacity: 0.25 } } 
       },
-      legend: { show: true, data: names, top: 0, textStyle: { color: getCssVar('--fg'), fontSize: 11 }, icon: 'roundRect' },
+      legend: { show: true, data: names, top: 0, textStyle: { color: getCssVar('--fg'), fontSize: 16 }, icon: 'roundRect' },
       series: names.map((n, i) => ({ 
           type: 'line', 
           name: n, 
@@ -211,9 +211,9 @@ if (!window.__DGS_BOOTED__) {
           stack: stack,
           areaStyle: (area && i===0) ? { opacity: 0.15 } : undefined,
           showSymbol: true, // Show dots
-          symbolSize: 4,    // Size of the dots
+          symbolSize: 8,    // Size of the dots
           data: [], 
-          lineStyle: { width: 2.5, color: colors[i % colors.length] },
+          lineStyle: { width: 4.0, color: colors[i % colors.length] },
           itemStyle: { color: colors[i % colors.length] }
       })),
       tooltip: { trigger: 'axis', backgroundColor: 'rgba(20, 20, 20, 0.9)', textStyle: { color: '#fff' }, borderWidth: 0 }
@@ -399,7 +399,7 @@ if (!window.__DGS_BOOTED__) {
   const QUICK_COMMANDS = [
     'CX,ON', 'CX,OFF',
     'CAL',
-    'ST,GPS',
+    'ST,UTC',
     'SIM,ENABLE', 'SIM,ACTIVATE', 'SIM,DISABLE',
     'MEC,PL,ON', 'MEC,PL,OFF',
     '/dummy.on', '/dummy.off'
@@ -438,6 +438,16 @@ if (!window.__DGS_BOOTED__) {
             return;
         }
         err(`Unknown local command: ${cmd}`);
+        return;
+    }
+
+    // Dynamic Command: Set Time to current UTC
+    if (cmd === 'ST,UTC') {
+        const now = new Date();
+        const timeStr = `${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())}`;
+        // cmd becomes "ST,13:45:00"
+        // The backend will wrap this to: CMD,1043,ST,13:45:00
+        sendCommand(`ST,${timeStr}`); 
         return;
     }
 
