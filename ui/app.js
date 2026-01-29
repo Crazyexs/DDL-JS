@@ -291,6 +291,9 @@ if (!window.__DGS_BOOTED__) {
   }
 
   // This function runs EVERY TIME a new data packet arrives!
+  // [REQ-67] All telemetry shall be displayed in real time in text format
+  // [REQ-68] Displayed in SI units and units indicated on displays
+  // [REQ-70] Display mission time, temperature, GPS, packet count, state
   function onTelemetry(t) {
     if (el.freeze?.checked) return; // Stop updating if "Freeze" is checked
 
@@ -337,6 +340,7 @@ if (!window.__DGS_BOOTED__) {
     }
 
     // 7. Update Charts
+    // [REQ-69] Plot altitude, battery voltage, current, accelerometer, rotation rates in real time
     const label = t.mission_time || hms();
     pushChart(st.charts.altitude, label, [t.altitude_m]);
     pushChart(st.charts.power, label, [t.voltage_v, t.current_a]);
@@ -399,7 +403,7 @@ if (!window.__DGS_BOOTED__) {
   const QUICK_COMMANDS = [
     'CX,ON', 'CX,OFF',
     'CAL',
-    'ST,UTC',
+    'ST,GPS',
     'SIM,ENABLE', 'SIM,ACTIVATE', 'SIM,DISABLE',
     'MEC,PL,ON', 'MEC,PL,OFF',
     '/dummy.on', '/dummy.off'
@@ -438,16 +442,6 @@ if (!window.__DGS_BOOTED__) {
             return;
         }
         err(`Unknown local command: ${cmd}`);
-        return;
-    }
-
-    // Dynamic Command: Set Time to current UTC
-    if (cmd === 'ST,UTC') {
-        const now = new Date();
-        const timeStr = `${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())}`;
-        // cmd becomes "ST,13:45:00"
-        // The backend will wrap this to: CMD,1043,ST,13:45:00
-        sendCommand(`ST,${timeStr}`); 
         return;
     }
 
@@ -558,6 +552,7 @@ if (!window.__DGS_BOOTED__) {
     initMap();
     fillCmds();
     initTheme();
+    // [REQ-77] All data shall be shown simultaneously in the ground station GUI (Tabs not allowed)
     info('DAEDALUS Ground Station Initialized.');
     connect();
     

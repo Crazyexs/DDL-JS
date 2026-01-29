@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime, timezone
 
 # ===================== CONFIGURATION =====================
-# This is the team ID number used for the competition.
+# Team ID 
 TEAM_ID = 1043
 
 # This is the default USB port the computer uses to talk to the radio.
@@ -66,6 +66,8 @@ BAUD_PRESETS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 92160
 # ===================== TELEMETRY CONFIG (Dynamic Loading) =====================
 # We load the structure of the CSV from 'telemetry_config.json'
 # This allows you to change the order of columns without changing the code.
+# [REQ-64] Generate csv files of all sensor data
+# [REQ-70] Display mission time, temperature, GPS, packet count, state
 def load_telemetry_config():
     config_path = ROOT_DIR / "telemetry_config.json"
     if not config_path.exists():
@@ -440,12 +442,14 @@ async def handle_telemetry_line(raw: str):
 
     # 5) Update counters
     state.rx_count += 1
+    # [REQ-78] Count the number of received packets
     
     # Packet Loss Calculation (Time-based)
     now = time.time()
     if state.last_rx_time > 0:
         dt = now - state.last_rx_time
         # If gap is > 1.5s, we assume we missed packets (assuming 1Hz rate)
+        # [REQ-65] Telemetry shall include mission time with 1 second resolution (Checked in parser)
         if dt > 1.5:
             missed = int(round(dt)) - 1
             if missed > 0:
@@ -471,6 +475,9 @@ sim_task: Optional[asyncio.Task] = None
 async def sim_file_streamer(file_path: Path):
     """
     Streams the pressure data from the file (Step 3 of simulation).
+    # [REQ-74] Transmit pressure data from a csv file provided by the competition at a 1 Hz interval
+    # [REQ-83] Ground station sends air pressure values at a one second interval
+    # [REQ-84] Use radio uplink pressure values for altitude
     """
     if not file_path.exists():
         log_json(level="error", event="sim_file_missing", file=str(file_path))
@@ -518,6 +525,8 @@ async def sim_sender(file_path: Path):
     """
     Reads a file with pressure data and sends it to the CanSat to simulate flight.
     Follows sequence: SIM,ENABLE -> SIM,ACTIVATE -> Stream SIMP packets.
+    # [REQ-73] Command payload to operate in simulation mode by sending SIMULATION ENABLE and SIMULATION ACTIVATE
+    # [REQ-85] Enter simulation mode only after receiving ENABLE and ACTIVATE commands
     """
     # 1. Enable Simulation Mode
     state.sim_enabled = True
@@ -760,6 +769,9 @@ async def api_command(body: CommandBody):
     """
     Receives a command from the website (e.g., "CX,ON"),
     adds the Team ID prefix, and queues it to be sent.
+    # [REQ-63] Command CanSat to calibrate altitude to zero (CAL)
+    # [REQ-82] Set time by ground command (ST,GPS or ST,UTC)
+    # [REQ-86] Commands to activate all mechanisms (MEC,PL,ON etc.)
     """
     cmd_upper = body.cmd.strip().upper()
     

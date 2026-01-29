@@ -578,3 +578,156 @@ a { color: var(--accent); text-decoration: none; }
     display: none;
   }
 }
+
+/* ================================================================== */
+/*       RASPBERRY PI MODE (800x480 Waveshare 4.3" Display)          */
+/* ================================================================== */
+/* Targets small landscape screens like the Waveshare 4.3" HDMI LCD */
+@media (max-width: 850px) and (max-height: 520px) {
+  /* Enable sunlight boost by default for outdoor use */
+  :root {
+    --font-base: 16px; /* Slightly smaller base, but still readable */
+  }
+
+  body {
+    overflow: auto;
+  }
+
+  /* Compact Top Bar */
+  .topbar {
+    padding: 2px 6px;
+    gap: 6px;
+  }
+  .brand { font-size: 16px; }
+  .sub { display: none; }
+  .logo { width: 24px; height: 24px; }
+  .clock-badge { font-size: 14px; padding: 2px 6px; }
+
+  /* Compact Highlights Strip */
+  .strip-highlights {
+    padding: 4px 6px;
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    justify-content: flex-start;
+  }
+  .kv-major-large .v { font-size: 28px; }
+  .kv-major-large .k { font-size: 12px; }
+  .kv-major .v { font-size: 14px; }
+  .kv-major .k { font-size: 11px; }
+  .kv-major { padding: 2px 6px; }
+
+  /* Hide compass on small screens to save space */
+  .compass-container { display: none; }
+
+  /* Single Column Grid Layout */
+  .screen {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px;
+    overflow-y: auto;
+    height: auto;
+  }
+
+  .panel {
+    border-radius: 8px;
+    padding: 6px;
+  }
+  .panel-title {
+    font-size: 14px;
+    padding: 2px 0 4px;
+    margin-bottom: 4px;
+  }
+
+  /* Values Panel - Priority Display */
+  .values-panel {
+    order: 1;
+    gap: 6px;
+    flex: 0 0 auto;
+  }
+
+  /* Compact Altitude Chart */
+  .chartbox-main {
+    min-height: 120px;
+    padding: 4px 6px;
+    border-radius: 8px;
+  }
+  .charttitle { font-size: 12px; margin-bottom: 2px; }
+  #chart-altitude { min-height: 100px; }
+
+  /* Secondary Charts in Row */
+  .charts-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    min-height: 100px;
+    flex: 0 0 auto;
+  }
+  .charts-grid .chartbox {
+    min-height: 80px;
+    padding: 4px;
+  }
+  #chart-power, #chart-accel, #chart-gyro { min-height: 70px; }
+
+  /* Values Grid - Compact 4 Column */
+  .values-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+  }
+  .kv-cell, .kv-group {
+    padding: 4px 6px;
+    border-radius: 4px;
+  }
+  .kv-cell .k, .kv-group .k { font-size: 11px; margin-bottom: 1px; }
+  .kv-cell .v { font-size: 16px; }
+  .kv-group .v-group { font-size: 13px; flex-wrap: wrap; gap: 2px; }
+
+  /* Map Panel - Hidden or Minimal */
+  .map-panel {
+    order: 3;
+    display: none; /* Hide map by default on tiny screen - use GPS values instead */
+  }
+  /* To show a small map, uncomment below and comment out display:none above:
+  .map-panel {
+    order: 3;
+    min-height: 120px;
+    max-height: 150px;
+  }
+  */
+
+  /* Logs Panel - Compact */
+  .logs-panel {
+    order: 2;
+    flex: 0 0 auto;
+    max-height: 150px;
+  }
+  .cmdrow { gap: 3px; }
+  .sel.wide { min-width: 200px; }
+  .rawbox { font-size: 12px; }
+  .log-controls { gap: 4px; }
+  .log-controls .left, .log-controls .right { gap: 4px; }
+  .chk { font-size: 12px; }
+  .btn.sm { padding: 4px 6px; font-size: 12px; min-height: 24px; }
+  .input { font-size: 14px; padding: 4px 6px; min-height: 28px; }
+  .sel { font-size: 14px; padding: 4px 6px; min-height: 28px; }
+
+  /* Mission bar adjustments */
+  .missionbar { gap: 6px; }
+  .bigtime { font-size: 14px; }
+}
+
+/* Pi Kiosk Mode - Hide scrollbars for cleaner look */
+@media (max-width: 850px) and (max-height: 520px) {
+  body::-webkit-scrollbar,
+  .screen::-webkit-scrollbar,
+  .rawbox::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  body::-webkit-scrollbar-thumb,
+  .screen::-webkit-scrollbar-thumb,
+  .rawbox::-webkit-scrollbar-thumb {
+    background: var(--edge);
+    border-radius: 2px;
+  }
+}

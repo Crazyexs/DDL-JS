@@ -99,6 +99,38 @@ The system is built with a robust **Python FastAPI** backend for hardware commun
 
 ---
 
+## Branches
+
+This project maintains two branches for different deployment scenarios:
+
+| Branch | Target Platform | Description |
+| :--- | :--- | :--- |
+| `main` | **Laptop/Desktop** (Windows, macOS, Linux) | Standard UI for larger screens. |
+| `raspberry-pi` | **Raspberry Pi** (4.3" 800x480 Display) | Compact UI optimized for small screens, plus auto-start scripts. |
+
+### Raspberry Pi Deployment (Mark Walker Award Hardware)
+
+The `raspberry-pi` branch is designed for the portable ground station using:
+- **Raspberry Pi 4**
+- **Waveshare 4.3" HDMI LCD (800x480)**
+- **Rii K01X1 Mini Wireless Keyboard**
+
+**Quick Setup:**
+```bash
+# Clone the repo and switch to the Pi branch
+git clone https://github.com/Crazyexs/DDL-JS.git
+cd DDL-JS
+git checkout raspberry-pi
+
+# Run the one-time setup script
+sudo bash scripts/setup-pi.sh
+
+# Reboot - the ground station will start automatically!
+sudo reboot
+```
+
+---
+
 ## Project Structure
 
 ```text
@@ -108,10 +140,15 @@ DDL-JS/
 ├── telemetry_config.json   # Telemetry parsing configuration
 ├── data/                   # Stores flight CSV data
 ├── logs/                   # Stores system operation logs
+├── scripts/                # Deployment scripts (raspberry-pi branch only)
+│   ├── setup-pi.sh         # One-time Pi setup script
+│   └── autostart/
+│       ├── groundstation.service  # Systemd service for backend
+│       └── kiosk.sh               # Chromium kiosk launcher
 └── ui/                     # Web frontend source code
     ├── index.html          # Main dashboard layout
     ├── app.js              # Frontend logic
-    ├── styles.css          # Styling
+    ├── styles.css          # Styling (includes 800x480 responsive rules)
     └── assets/             # Images and icons
 ```
 
