@@ -1,20 +1,22 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="light"> <!-- change to "dark" to default dark -->
+
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>DAEDALUS #1043 — Ground Station</title>
 
   <!-- Libs -->
-  <link rel="preconnect" href="https://cdn.jsdelivr.net"/>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1/dist/leaflet.css" />
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1/dist/leaflet.js"></script>
 
   <!-- App styles -->
-  <link rel="stylesheet" href="styles.css"/>
-  <link rel="icon" href="/assets/daedalus.png"/>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="/assets/daedalus.png" />
 </head>
+
 <body>
   <!-- HEADER -->
   <header class="topbar">
@@ -33,6 +35,9 @@
 
     <div class="status">
       <div id="connPill" class="pill">Disconnected</div>
+      <button id="toggleAudio" class="btn sm primary" title="Toggle Voice Announcements">
+        🔊 Audio: ON
+      </button>
       <button id="toggleTheme" class="btn sm ghost" title="Toggle light/dark (saves)">
         Theme
       </button>
@@ -57,6 +62,10 @@
       <div class="k">GPS Sats</div>
       <div id="gpsSats" class="v">--</div>
     </div>
+    <div class="group" id="recoveryGroup" style="display: none;">
+      <button id="btnFindPayload" class="btn xl primary"
+        style="background-color: var(--ok); border-color: var(--ok);">📍 FIND PAYLOAD</button>
+    </div>
     <div class="compass-container">
       <div class="compass">
         <div class="compass-arrow" id="compassArrow"></div>
@@ -64,16 +73,16 @@
       <div class="heading-text" id="heading">--°</div>
     </div>
     <div class="kv-major">
-        <div class="k">RX Packets</div>
-        <div id="rxCount" class="v ok">0</div>
+      <div class="k">RX Packets</div>
+      <div id="rxCount" class="v ok">0</div>
     </div>
     <div class="kv-major">
-        <div class="k">Lost Packets</div>
-        <div id="lossCount" class="v">0</div>
+      <div class="k">Lost Packets</div>
+      <div id="lossCount" class="v">0</div>
     </div>
     <div class="group">
-        <button id="btnOpenCsvFolder" class="btn sm">Log Folder</button>
-        <button id="btnSim" class="btn sm">Run Sim</button>
+      <button id="btnOpenCsvFolder" class="btn sm">Log Folder</button>
+      <button id="btnSim" class="btn sm">Run Sim</button>
     </div>
   </section>
 
@@ -120,15 +129,27 @@
       </div>
 
 
-      
+
       <!-- Key Values Grid -->
       <div class="panel-title">KEY VALUES</div>
       <div class="values-grid">
-        <div class="kv-cell"><div class="k">Temperature</div><div id="val_temp" class="v">-- °C</div></div>
-        <div class="kv-cell"><div class="k">Pressure</div><div id="val_pressure" class="v">-- kPa</div></div>
-        <div class="kv-cell"><div class="k">Voltage</div><div id="val_voltage" class="v">-- V</div></div>
-        <div class="kv-cell"><div class="k">Current</div><div id="val_current" class="v">-- A</div></div>
-        
+        <div class="kv-cell">
+          <div class="k">Temperature</div>
+          <div id="val_temp" class="v">-- °C</div>
+        </div>
+        <div class="kv-cell">
+          <div class="k">Pressure</div>
+          <div id="val_pressure" class="v">-- kPa</div>
+        </div>
+        <div class="kv-cell">
+          <div class="k">Voltage</div>
+          <div id="val_voltage" class="v">-- V</div>
+        </div>
+        <div class="kv-cell">
+          <div class="k">Current</div>
+          <div id="val_current" class="v">-- A</div>
+        </div>
+
         <div class="kv-group">
           <div class="k">Gyro (deg/s)</div>
           <div class="v-group">
@@ -137,7 +158,7 @@
             <span>Z: <b id="val_gyro_z">--</b></span>
           </div>
         </div>
-        
+
         <div class="kv-group">
           <div class="k">Accel (m/s²)</div>
           <div class="v-group">
@@ -153,12 +174,15 @@
     <section class="panel logs-panel">
       <div class="panel-title">
         <div>Telemetry Control &amp; Logs</div>
-        <div class="lastcmd"><div class="tit">Last Cmd</div><div id="lastCmd" class="val">—</div></div>
+        <div class="lastcmd">
+          <div class="tit">Last Cmd</div>
+          <div id="lastCmd" class="val">—</div>
+        </div>
       </div>
       <div class="logs-content">
         <div class="cmdrow">
           <select id="quickCmd" class="sel wide"></select>
-          <input id="manualCmd" class="input grow" placeholder="Manual command... e.g., CX,ON"/>
+          <input id="manualCmd" class="input grow" placeholder="Manual command... e.g., CX,ON" />
           <button id="sendCmd" class="btn primary sm">Send</button>
         </div>
         <div class="log-controls">
@@ -176,22 +200,54 @@
           </div>
         </div>
         <div id="rawBox" class="rawbox" aria-live="polite"></div>
-        <div id="jumpLive" class="jump-live" hidden><button id="jumpLiveBtn" class="btn primary sm">Jump to Live</button></div>
+        <div id="jumpLive" class="jump-live" hidden><button id="jumpLiveBtn" class="btn primary sm">Jump to
+            Live</button></div>
       </div>
     </section>
   </main>
 
+  <!-- RECOVERY MAP OVERLAY -->
+  <div id="recoveryOverlay"
+    style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: var(--bg); z-index: 9999; flex-direction: column;">
+    <div class="topbar">
+      <div class="brandwrap">
+        <button id="btnCloseRecovery" class="btn lg danger" style="margin-right: 15px;">⬅ EXIT NAVIGATION</button>
+        <div class="brand">PAYLOAD RECOVERY MODE</div>
+      </div>
+      <div class="status">
+        <button id="btnVoiceNav" class="btn sm primary">🔊 Voice Nav: ON</button>
+      </div>
+    </div>
+
+    <div
+      style="display: flex; gap: 10px; padding: 10px; background: color-mix(in oklab, var(--panel) 96%, black 0%); border-bottom: 2px solid var(--ok);">
+      <div class="kv-major-large" style="flex: 1;">
+        <div class="k">Distance to Payload</div>
+        <div id="recovDist" class="v" style="font-size: 54px; color: var(--ok);">-- m</div>
+      </div>
+      <div class="kv-major-large" style="flex: 1; border-left: 2px solid var(--edge);">
+        <div class="k">Walk Heading</div>
+        <div id="recovHeading" class="v" style="font-size: 54px; color: var(--accent);">-- °</div>
+      </div>
+    </div>
+
+    <div style="flex: 1; position: relative; padding: 10px;">
+      <div id="recoveryMap" style="width: 100%; height: 100%; border-radius: 12px; border: 4px solid var(--ok);"></div>
+    </div>
+  </div>
+
   <!-- sync small→big time -->
   <script>
-    (function(){
-      const s=document.getElementById('missionTime'),b=document.getElementById('missionTimeBig');
-      if(!s||!b)return;
-      new MutationObserver(()=>{b.textContent=s.textContent.replace('Mission: ','')})
-      .observe(s,{childList:true,characterData:true,subtree:true});
+    (function () {
+      const s = document.getElementById('missionTime'), b = document.getElementById('missionTimeBig');
+      if (!s || !b) return;
+      new MutationObserver(() => { b.textContent = s.textContent.replace('Mission: ', '') })
+        .observe(s, { childList: true, characterData: true, subtree: true });
     })();
   </script>
 
   <script>window.DGS_TEAM_ID = 1043;</script>
   <script src="app.js"></script>
 </body>
+
 </html>
