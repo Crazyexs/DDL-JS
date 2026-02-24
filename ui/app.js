@@ -402,10 +402,12 @@ if (!window.__DGS_BOOTED__) {
   // ---------- COMMANDS (Sending data to satellite) ----------
   const QUICK_COMMANDS = [
     'CX,ON', 'CX,OFF',
-    'CAL',
+    'CAL', 'RESET',
     'ST,GPS',
     'SIM,ENABLE', 'SIM,ACTIVATE', 'SIM,DISABLE',
     'MEC,PL,ON', 'MEC,PL,OFF',
+    'MEC,INS,ON', 'MEC,INS,OFF',
+    'MEC,PAR,ON', 'MEC,PAR,OFF',
     '/dummy.on', '/dummy.off'
   ];
   
