@@ -21,6 +21,18 @@ The system is built with a robust **Python FastAPI** backend for hardware commun
     *   **System Logs:** Records operational events to JSONL (`logs/ground.jsonl`).
 *   **Dynamic Configuration:** Flexible telemetry parsing defined in `telemetry_config.json`.
 *   **Simulation Mode:** Built-in tools to replay flight data or generate dummy telemetry for testing and practice.
+*   **Autonomous Audio Assistant:** Utilizes Text-To-Speech to actively announce flight states, system diagnostics, and mission success.
+*   **Recovery Mode:** Dedicated GPS navigation UI with turn-by-turn voice directions to locate the CanSat post-landing.
+
+---
+
+## COTS Hardware Configuration
+This Ground Station leverages standard Commercial Off-The-Shelf (COTS) components to ensure cost-friendly repeatability:
+*   **Computing Core:** Raspberry Pi 4B (2GB+ RAM)
+*   **Display:** Waveshare 4.3" HDMI LCD (800x480 resolution)
+*   **Radio Transceiver:** XBee / LoRa Module (via USB Serial)
+*   **Location Tracking:** External USB GPS Module (used for calculating dynamic recovery directions)
+*   **Input:** Rii K01X1 Mini Wireless Keyboard
 
 ---
 
@@ -33,6 +45,7 @@ The system is built with a robust **Python FastAPI** backend for hardware commun
 
 ### Frontend
 *   **Core:** HTML5, CSS3, Vanilla JavaScript
+*   **Advanced APIs:** `window.speechSynthesis` (Audio TTS), `navigator.geolocation` (External GPS routing)
 *   **Visualization:**
     *   [ECharts](https://echarts.apache.org/) (Real-time charts)
     *   [Leaflet](https://leafletjs.com/) (Maps)
@@ -94,8 +107,43 @@ The system is built with a robust **Python FastAPI** backend for hardware commun
         ```
     *   ngrok will provide a public URL (e.g., `https://xxxx-xxxx-xxxx-xxxx.ngrok-free.app`) that you can use to access your dashboard remotely.
 
-5.  **Simulation (Optional):**
+9.  **Simulation (Optional):**
     If you don't have hardware connected, click the **Run Sim** button in the UI or use the API to start the dummy data generator.
+
+---
+
+## API Endpoints
+
+The FastAPI backend exposes the following local endpoints utilized by the frontend:
+
+### Data & Diagnostics
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/health` | Returns Ground Station status, serial port health, and audio diagnostic flags. |
+| `GET` | `/ws/telemetry` | Primary WebSocket outputting live telemetry and GS logs. |
+| `GET` | `/api/logs` | Fetches the latest system-level operational logs (JSONL). |
+
+### Serial Management
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/serial/ports` | Lists all available system COM/TTY ports. |
+| `GET` | `/api/serial/bauds` | Lists available baud rates. |
+| `GET`/`POST` | `/api/serial/config` | Retrieves or sets the active serial connection configuration. |
+
+### Commands & Simulation
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/command` | Uplinks a specific command string (e.g. `CX,ON`) to the CanSat via Serial. |
+| `POST` | `/api/sim/start` | Starts SIM mode, uplinking local pressure CSV data to the CanSat. |
+| `POST` | `/api/dummy/start` | Starts the UI dummy visualizer (fakes a launch, descent, and landing). |
+| `POST` | `/api/dummy/stop` | Stops the UI dummy visualizer. |
+
+### Logs & Intake
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/ingest` | Manual HTTP ingestion endpoint for telemetry lines (bypasses Serial). |
+| `POST` | `/api/csv/save-now` | Forces an immediate write of the current telemetry buffer to the CSV. |
+| `GET` | `/api/csv/open-folder`| Opens the local OS File Explorer directly to the `data/` log folder. |
 
 ---
 

@@ -583,6 +583,17 @@ def generate_dummy_telemetry_line() -> str:
             state = 'ASCENT'
         else:
             state = 'DESCENT'
+    elif dummy_state["last_alt"] > 20 and altitude < 20:
+        # If it was high and now it's low, it has landed
+        state = 'LANDED'
+    elif dummy_state["last_alt"] > 0 and dummy_state["last_alt"] < 20 and state != 'LANDED':
+        # Keep it landed holding if it already hit
+        if getattr(dummy_state, "has_landed", False):
+            state = 'LANDED'
+    
+    if state == 'LANDED':
+        dummy_state.has_landed = True
+
     dummy_state["last_alt"] = altitude
 
     # Dictionary of all current dummy values

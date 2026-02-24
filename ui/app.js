@@ -125,9 +125,29 @@ if (!window.__DGS_BOOTED__) {
     };
 
     // ---------- AUDIO (TTS) & MATH HELPERS ----------
+    let audioUnlocked = false;
+
+    function unlockAudio() {
+      if (audioUnlocked) return;
+      // Play a tiny silent utterance to unlock the speech engine on first click
+      const u = new SpeechSynthesisUtterance('');
+      window.speechSynthesis.speak(u);
+      audioUnlocked = true;
+      document.body.removeEventListener('click', unlockAudio);
+      document.body.removeEventListener('touchstart', unlockAudio);
+    }
+
+    // Browsers require a user gesture before SpeechSynthesis can run.
+    document.body.addEventListener('click', unlockAudio);
+    document.body.addEventListener('touchstart', unlockAudio);
+
     function speak(text) {
       if (!st.audioEnabled) return;
       if (!window.speechSynthesis) return;
+
+      // Force unlock if not already (some browsers allow it if triggered by a button directly)
+      if (!audioUnlocked) unlockAudio();
+
       window.speechSynthesis.cancel(); // Cancel ongoing
       const u = new SpeechSynthesisUtterance(text);
       // Use an English voice if available
@@ -721,7 +741,21 @@ if (!window.__DGS_BOOTED__) {
       initTheme();
 
       // Announce startup health
-      setTimeout(checkDiagnostic, 1000); // 1s delay to let browser load
+      // Browsers block audio on load. We wait 1 second, but if they haven't clicked, it might not play.
+      // To ensure they hear it, we also bind it to the first click if it missed.
+      setTimeout(() => {
+        if (audioUnlocked) checkDiagnostic();
+        else {
+          // Wait for the first click to announce startup
+          const onFirstClick = () => {
+            checkDiagnostic();
+            document.body.removeEventListener('click', onFirstClick);
+            document.body.removeEventListener('touchstart', onFirstClick); // Also remove touchstart
+          };
+          document.body.addEventListener('click', onFirstClick);
+          document.body.addEventListener('touchstart', onFirstClick); // Add touchstart for mobile
+        }
+      }, 1000);
 
       // [REQ-77] All data shall be shown simultaneously in the ground station GUI (Tabs not allowed)
       info('DAEDALUS Ground Station Initialized.');
