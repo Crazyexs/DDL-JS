@@ -568,8 +568,15 @@ def generate_dummy_telemetry_line() -> str:
     dummy_state["lat"] += (random.random() - 0.5) * 0.0002
     dummy_state["lon"] += (random.random() - 0.5) * 0.0002
     
-    # Simulate altitude change (up and down)
-    altitude = 150 + math.sin(pkt / 30) * 120 + (random.random() - 0.5) * 5
+    # Simulate altitude change (go up a bit, then drop instantly to 0)
+    if pkt < 5:
+        altitude = 100 + (pkt * 10) + (random.random() - 0.5) * 5
+    else:
+        altitude = 150 - ((pkt - 5) * 5) + (random.random() - 0.5) * 5
+
+    if altitude <= 0:
+        altitude = 0.0 + (random.random() - 0.5) * 0.5
+
     temp = 25 - (altitude / 100)
     voltage = 12.6 - (pkt / 500)
     current = 0.5 + (random.random() - 0.5) * 0.2
@@ -578,21 +585,17 @@ def generate_dummy_telemetry_line() -> str:
     
     # Determine flight state based on altitude
     state = 'LAUNCH_PAD'
-    if altitude > 20:
+    if dummy_state.get("has_landed", False) or altitude <= 0.5:
+        state = 'LANDED'
+        dummy_state["has_landed"] = True
+    elif altitude > 20:
         if altitude > dummy_state["last_alt"]:
             state = 'ASCENT'
         else:
             state = 'DESCENT'
-    elif dummy_state["last_alt"] > 20 and altitude < 20:
-        # If it was high and now it's low, it has landed
+    elif dummy_state["last_alt"] > 20 and altitude <= 20:
         state = 'LANDED'
-    elif dummy_state["last_alt"] > 0 and dummy_state["last_alt"] < 20 and state != 'LANDED':
-        # Keep it landed holding if it already hit
-        if getattr(dummy_state, "has_landed", False):
-            state = 'LANDED'
-    
-    if state == 'LANDED':
-        dummy_state.has_landed = True
+        dummy_state["has_landed"] = True
 
     dummy_state["last_alt"] = altitude
 

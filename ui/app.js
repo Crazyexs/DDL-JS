@@ -33,6 +33,7 @@ if (!window.__DGS_BOOTED__) {
       lastGPSHMS: null,
       altZero: 0,
       lastAlt: 0,
+      maxAlt: 0,
       gps_lat: null,
       gps_lon: null,
       // Audio and Recovery State
@@ -372,15 +373,19 @@ if (!window.__DGS_BOOTED__) {
     function onTelemetry(t) {
       if (el.freeze?.checked) return; // Stop updating if "Freeze" is checked
 
-      // --- AUDIO NOTIFICATIONS ---
+      // --- AUDIO & ALTITUDE TRACKING ---
+      if (typeof t.altitude_m === 'number') {
+        if (t.altitude_m > st.maxAlt) st.maxAlt = t.altitude_m;
+      }
+
       if (t.state && t.state.trim() !== '' && t.state !== st.lastSpokenState) {
         if (st.lastSpokenState !== null) { // Only speak on changes, not on initial boot spam
           if (t.state === 'LANDED') {
             const timeStr = (t.mission_time || '').replace(/:/g, ' ');
-            speak(`Mission Successful. Mission time: ${timeStr}. Last GPS location: Latitude ${num(t.gps_lat, 4)}, Longitude ${num(t.gps_lon, 4)}.`);
+            speak(`Mission Successful. Highest altitude reached: ${Math.round(st.maxAlt)} meters.`);
             if (el.recoveryGroup) el.recoveryGroup.style.display = 'block'; // Show Recovery Button
           } else {
-            speak(`State changed to ${t.state}. Altitude is ${Math.round(t.altitude_m)} meters.`);
+            speak(`State changed to ${t.state}.`);
           }
         }
         st.lastSpokenState = t.state;
@@ -717,21 +722,21 @@ if (!window.__DGS_BOOTED__) {
     }
 
     // ---------- INITIALIZATION (Startup) ----------
-    async function checkDiagnostic() {
+    async function fetchDiagnosticText() {
       try {
         const res = await fetch('/api/health');
         if (res.ok) {
           const data = await res.json();
           if (!data.serial || !data.serial.port) {
-            speak("Warning: XBee port configuration not found.");
+            return "Warning: XBee port configuration not found.";
           } else {
-            speak(`System initialized. Connected to Ground Station hardware on port ${data.serial.port}.`);
+            return `System initialized. Connected to Ground Station hardware on port ${data.serial.port}.`;
           }
         } else {
-          speak("System initialized with backend warnings.");
+          return "System initialized with backend warnings.";
         }
       } catch (e) {
-        speak("Warning: Ground Station backend is offline.");
+        return "Warning: Ground Station backend is offline.";
       }
     }
 
@@ -741,21 +746,22 @@ if (!window.__DGS_BOOTED__) {
       initTheme();
 
       // Announce startup health
-      // Browsers block audio on load. We wait 1 second, but if they haven't clicked, it might not play.
-      // To ensure they hear it, we also bind it to the first click if it missed.
-      setTimeout(() => {
-        if (audioUnlocked) checkDiagnostic();
-        else {
-          // Wait for the first click to announce startup
+      const setupSpeech = async () => {
+        const msg = await fetchDiagnosticText();
+        if (audioUnlocked) {
+          speak(msg);
+        } else {
           const onFirstClick = () => {
-            checkDiagnostic();
+            speak(msg);
             document.body.removeEventListener('click', onFirstClick);
-            document.body.removeEventListener('touchstart', onFirstClick); // Also remove touchstart
+            document.body.removeEventListener('touchstart', onFirstClick);
           };
           document.body.addEventListener('click', onFirstClick);
-          document.body.addEventListener('touchstart', onFirstClick); // Add touchstart for mobile
+          document.body.addEventListener('touchstart', onFirstClick);
         }
-      }, 1000);
+      };
+      // Run immediately instead of waiting 1000ms
+      setupSpeech();
 
       // [REQ-77] All data shall be shown simultaneously in the ground station GUI (Tabs not allowed)
       info('DAEDALUS Ground Station Initialized.');
