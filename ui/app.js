@@ -646,10 +646,17 @@ if (!window.__DGS_BOOTED__) {
     function initRecoveryMap() {
       if (st.recoveryMap) return;
       st.recoveryMap = L.map('recoveryMap', { zoomControl: true, attributionControl: false }).setView([18.788, 98.985], 16);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(st.recoveryMap);
-      st.recoveryMarker = L.marker([18.788, 98.985]).addTo(st.recoveryMap); // Payload
-      st.userMarker = L.circleMarker([18.788, 98.985], { color: 'blue', radius: 8, fillOpacity: 1 }).addTo(st.recoveryMap); // User
-      st.recoveryRoute = L.polyline([], { color: 'red', weight: 4 }).addTo(st.recoveryMap);
+
+      // Offline Map Support for Mark Walker Award: 
+      // We cannot fetch openstreetmap tiles without WiFi, so we load an empty color background
+      // and rely entirely on the Distance/Heading readouts and drawn paths to navigate in the field.
+      // L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(st.recoveryMap);
+      st.recoveryMap.getContainer().style.background = '#e0e0e0'; // Light grey offline background
+
+      st.recoveryMarker = L.marker([18.788, 98.985]).addTo(st.recoveryMap); // Payload 
+      st.gcsMarker = L.circleMarker([18.788, 98.985], { radius: 8, color: 'blue' }).addTo(st.recoveryMap); // User
+
+      st.recoveryLine = L.polyline([[18.788, 98.985], [18.788, 98.985]], { color: 'red', weight: 4, dashArray: '10, 10' }).addTo(st.recoveryMap);
     }
 
     el.btnFindPayload?.addEventListener('click', () => {
@@ -671,8 +678,8 @@ if (!window.__DGS_BOOTED__) {
           const uLat = pos.coords.latitude;
           const uLon = pos.coords.longitude;
           st.userLoc = [uLat, uLon];
-          st.userMarker.setLatLng(st.userLoc);
-          st.recoveryRoute.setLatLngs([st.userLoc, payloadPos]);
+          st.gcsMarker.setLatLng(st.userLoc);
+          st.recoveryLine.setLatLngs([st.userLoc, payloadPos]);
 
           const dist = calcDistance(uLat, uLon, payloadPos[0], payloadPos[1]);
           const hdg = calcHeading(uLat, uLon, payloadPos[0], payloadPos[1]);
