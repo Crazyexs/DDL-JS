@@ -37,7 +37,7 @@ TEAM_ID = 1043
 # This is the default USB port the computer uses to talk to the radio.
 # On Windows it is usually "COM3", "COM4", etc.
 # On Linux/Mac it looks like "/dev/ttyUSB0".
-DEFAULT_PORT = "/dev/cu.usbserial-A9KZF1D9"
+DEFAULT_PORT = "/dev/cu.usbserial-A50285BI"
 
 # This is the speed of the connection. Both the radio and computer must match this number.
 DEFAULT_BAUD = 115200
