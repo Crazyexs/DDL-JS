@@ -240,50 +240,13 @@ if (!window.__DGS_BOOTED__) {
     // Start button for the mission clock
     el.btnStartMission?.addEventListener('click', () => { if (!st.t0) st.t0 = Date.now(); info("Mission Timer Started."); });
 
-    // ---------- MAP LOGIC (3D Globe — CesiumJS, fully offline) ----------
-    function initMap() {
-      if (!el.mapEl) return;
+    // ---------- MAP LOGIC ---------------------------------------------------
+    // Online  → CesiumJS 3D globe with Esri World Imagery (Google Earth quality)
+    // Offline → 2D Leaflet with OpenStreetMap (uses browser-cached tiles)
+    // -------------------------------------------------------------------------
 
-      // Offline: no Cesium Ion token needed
-      Cesium.Ion.defaultAccessToken = '';
-
-      const viewer = new Cesium.Viewer('map', {
-        baseLayerPicker:       false, // We supply our own offline imagery
-        geocoder:              false, // No online geocoding
-        homeButton:            false,
-        sceneModePicker:       true,  // Allow 3D / Columbus / 2D switching
-        navigationHelpButton:  false,
-        animation:             false,
-        timeline:              false,
-        fullscreenButton:      false,
-        infoBox:               false,
-        selectionIndicator:    false,
-      });
-      st.cesiumViewer = viewer;
-
-      // ── Offline imagery: NaturalEarthII is bundled inside CesiumJS ──
-      viewer.scene.imageryLayers.removeAll();
-      viewer.scene.imageryLayers.addImageryProvider(
-        new Cesium.TileMapServiceImageryProvider({
-          url: Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII'),
-          fileExtension: 'jpg',
-        })
-      );
-
-      // ── Flat WGS84 ellipsoid — zero terrain tile requests ───────────
-      viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
-
-      // ── Camera: near-horizon angle so altitude is clearly visible ──────
-      viewer.camera.setView({
-        destination: Cesium.Cartesian3.fromDegrees(98.978, 18.781, 1200),
-        orientation: {
-          heading: Cesium.Math.toRadians(0),
-          pitch:   Cesium.Math.toRadians(-22), // near-horizontal = shows altitude in air
-          roll:    0.0,
-        },
-      });
-
-      // ── CanSat marker (floats at GPS altitude, no ground-clamp) ────────
+    function _cesiumSetupEntities(viewer) {
+      // CanSat marker — floats at real GPS altitude (no ground clamping)
       st.cesiumMarker = viewer.entities.add({
         name: 'CanSat #1043',
         position: Cesium.Cartesian3.fromDegrees(98.985, 18.788, 0),
@@ -293,14 +256,10 @@ if (!window.__DGS_BOOTED__) {
           outlineColor: Cesium.Color.WHITE,
           outlineWidth: 2,
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          // No heightReference → NONE by default → floats at absolute altitude
         },
         label: {
-          // Live altitude text updated every telemetry packet via CallbackProperty
           text: new Cesium.CallbackProperty(
-            () => `#1043\n${Math.round(st.lastCesiumAlt)} m`,
-            false
-          ),
+            () => `#1043\n${Math.round(st.lastCesiumAlt)} m`, false),
           font: 'bold 12px monospace',
           fillColor: Cesium.Color.WHITE,
           outlineColor: Cesium.Color.fromCssColorString('#0a0c14'),
@@ -314,8 +273,7 @@ if (!window.__DGS_BOOTED__) {
         },
       });
 
-      // ── Altitude stem: vertical line from ground directly to CanSat ───────
-      // This is the KEY visual that shows the CanSat is "in the air"
+      // Yellow vertical stem — most visible indicator that CanSat is IN THE AIR
       st.cesiumAltStem = viewer.entities.add({
         name: 'Altitude Stem',
         polyline: {
@@ -334,7 +292,7 @@ if (!window.__DGS_BOOTED__) {
         },
       });
 
-      // ── 3D flight-path polyline (live via CallbackProperty) ──────────
+      // Blue 3D flight-path trail
       st.flightPath = [];
       st.cesiumFlightPath = viewer.entities.add({
         name: 'Flight Path',
@@ -347,6 +305,89 @@ if (!window.__DGS_BOOTED__) {
           arcType: Cesium.ArcType.NONE,
         },
       });
+    }
+
+    // ── 3D mode (requires WiFi) ────────────────────────────────────────
+    function initCesium3D() {
+      if (!el.mapEl) return;
+      Cesium.Ion.defaultAccessToken = '';
+
+      const viewer = new Cesium.Viewer('map', {
+        baseLayerPicker:      false,
+        geocoder:             false,
+        homeButton:           false,
+        sceneModePicker:      true,   // 3D / Columbus view / 2D toggle
+        navigationHelpButton: false,
+        animation:            false,
+        timeline:             false,
+        fullscreenButton:     false,
+        infoBox:              false,
+        selectionIndicator:   false,
+      });
+      st.cesiumViewer = viewer;
+
+      // Esri World Imagery = Google Earth quality satellite, free, no API key
+      viewer.scene.imageryLayers.removeAll();
+      viewer.scene.imageryLayers.addImageryProvider(
+        new Cesium.UrlTemplateImageryProvider({
+          url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+          credit: 'Esri, Maxar, GeoEye, Earthstar Geographics, CNES/Airbus DS',
+          maximumLevel: 19,
+        })
+      );
+
+      viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+
+      // Near-horizontal camera so altitude is visually obvious
+      viewer.camera.setView({
+        destination: Cesium.Cartesian3.fromDegrees(98.978, 18.781, 1200),
+        orientation: {
+          heading: Cesium.Math.toRadians(0),
+          pitch:   Cesium.Math.toRadians(-22),
+          roll:    0.0,
+        },
+      });
+
+      _cesiumSetupEntities(viewer);
+
+      // If WiFi drops mid-flight, switch to NaturalEarthII offline fallback
+      window.addEventListener('offline', () => {
+        try {
+          viewer.scene.imageryLayers.removeAll();
+          viewer.scene.imageryLayers.addImageryProvider(
+            new Cesium.TileMapServiceImageryProvider({
+              url: Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII'),
+              fileExtension: 'jpg',
+            })
+          );
+        } catch(e) {}
+      }, { once: true });
+    }
+
+    // ── 2D mode (offline fallback) ──────────────────────────────────
+    function initLeaflet2D() {
+      if (!el.mapEl) return;
+      st.map = L.map('map', { zoomControl: true, attributionControl: false })
+        .setView([18.788, 98.985], 15);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        { maxZoom: 19 }).addTo(st.map);
+      st.marker = L.marker([18.788, 98.985]).addTo(st.map);
+    }
+
+    // ── Auto-detect WiFi and pick the right map ───────────────────────
+    function initMap() {
+      if (!el.mapEl) return;
+      if (navigator.onLine) {
+        initCesium3D();  // WiFi ✓ → 3D satellite globe
+      } else {
+        initLeaflet2D(); // No WiFi → 2D Leaflet (may show cached OSM tiles)
+        // Auto-upgrade to 3D if WiFi comes back
+        window.addEventListener('online', () => {
+          if (st.map) { try { st.map.remove(); } catch(e) {} st.map = null; st.marker = null; }
+          if (el.mapEl) el.mapEl.innerHTML = '';
+          initCesium3D();
+        }, { once: true });
+      }
     }
 
     // ---------- CHART LOGIC (Graphs) ----------
@@ -454,10 +495,11 @@ if (!window.__DGS_BOOTED__) {
     }
 
 
-    // Resize charts and Cesium globe when the window size changes
+    // Resize charts, Cesium globe, and Leaflet map when window resizes
     window.addEventListener('resize', () => {
       Object.values(st.charts).forEach(c => c?.resize());
       st.cesiumViewer?.resize();
+      st.map?.invalidateSize();
     });
 
     // ---------- TELEMETRY HANDLING (The Core Logic) ----------
@@ -553,14 +595,17 @@ if (!window.__DGS_BOOTED__) {
         st.lastCesiumAlt = alt;  // drives CallbackProperty on stem + label
 
         if (st.cesiumViewer) {
-          // Marker floats at real GPS altitude (no ground clamping)
+          // 3D mode: marker floats at real GPS altitude
           const pos3d = Cesium.Cartesian3.fromDegrees(lon, lat, alt);
           if (st.cesiumMarker) {
             st.cesiumMarker.position = new Cesium.ConstantPositionProperty(pos3d);
           }
-          // Append point to 3D flight trail
           st.flightPath.push(pos3d);
           if (st.flightPath.length > 600) st.flightPath.shift();
+        } else if (st.map) {
+          // 2D mode: standard Leaflet pan + marker
+          if (st.marker) st.marker.setLatLng([lat, lon]);
+          st.map.panTo([lat, lon], { animate: false });
         }
 
         el.gpsMini && (el.gpsMini.textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)} • sats: ${t.gps_sats ?? '—'}`);
@@ -898,4 +943,3 @@ if (!window.__DGS_BOOTED__) {
     window.addEventListener('DOMContentLoaded', init);
 
   })();
-}
