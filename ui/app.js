@@ -943,3 +943,4 @@ if (!window.__DGS_BOOTED__) {
     window.addEventListener('DOMContentLoaded', init);
 
   })();
+}
