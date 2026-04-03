@@ -26,9 +26,13 @@ if (!window.__DGS_BOOTED__) {
     const st = {
       teamId: window.DGS_TEAM_ID || 1043,
       t0: null,      // Start time of the mission
-      charts: {},    // Stores the chart objects
-      map: null,     // Stores the map object
-      marker: null,  // Stores the map marker object
+      charts: {},            // Stores the chart objects
+      cesiumViewer: null,    // 3D Cesium globe viewer
+      cesiumMarker: null,    // Cesium entity for CanSat marker
+      flightPath: [],        // Array of Cesium.Cartesian3 for 3D trail
+      cesiumFlightPath: null,// Cesium polyline entity
+      map: null,             // [recovery overlay only] Leaflet
+      marker: null,          // unused, kept for compat
       ws: null,      // The WebSocket connection to the server
       lastGPSHMS: null,
       altZero: 0,
@@ -234,16 +238,85 @@ if (!window.__DGS_BOOTED__) {
     // Start button for the mission clock
     el.btnStartMission?.addEventListener('click', () => { if (!st.t0) st.t0 = Date.now(); info("Mission Timer Started."); });
 
-
-    // ---------- MAP LOGIC ----------
+    // ---------- MAP LOGIC (3D Globe — CesiumJS, fully offline) ----------
     function initMap() {
       if (!el.mapEl) return;
-      // Create the map centered on a default location
-      st.map = L.map('map', { zoomControl: true, attributionControl: false }).setView([18.788, 98.985], 16);
-      // Load map tiles from OpenStreetMap
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(st.map);
-      // Add a marker pin
-      st.marker = L.marker([18.788, 98.985]).addTo(st.map);
+
+      // Offline: no Cesium Ion token needed
+      Cesium.Ion.defaultAccessToken = '';
+
+      const viewer = new Cesium.Viewer('map', {
+        baseLayerPicker:       false, // We supply our own offline imagery
+        geocoder:              false, // No online geocoding
+        homeButton:            false,
+        sceneModePicker:       true,  // Allow 3D / Columbus / 2D switching
+        navigationHelpButton:  false,
+        animation:             false,
+        timeline:              false,
+        fullscreenButton:      false,
+        infoBox:               false,
+        selectionIndicator:    false,
+      });
+      st.cesiumViewer = viewer;
+
+      // ── Offline imagery: NaturalEarthII is bundled inside CesiumJS ──
+      viewer.scene.imageryLayers.removeAll();
+      viewer.scene.imageryLayers.addImageryProvider(
+        new Cesium.TileMapServiceImageryProvider({
+          url: Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII'),
+          fileExtension: 'jpg',
+        })
+      );
+
+      // ── Flat WGS84 ellipsoid — zero terrain tile requests ───────────
+      viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+
+      // ── Default camera: look down at CanSat launch site ─────────────
+      viewer.camera.setView({
+        destination: Cesium.Cartesian3.fromDegrees(98.985, 18.788, 8000),
+        orientation: {
+          heading: Cesium.Math.toRadians(0),
+          pitch:   Cesium.Math.toRadians(-45),
+          roll:    0.0,
+        },
+      });
+
+      // ── CanSat marker ────────────────────────────────────────────────
+      st.cesiumMarker = viewer.entities.add({
+        name: 'CanSat #1043',
+        position: Cesium.Cartesian3.fromDegrees(98.985, 18.788, 0),
+        point: {
+          pixelSize: 14,
+          color: Cesium.Color.fromCssColorString('#4da3ff'),
+          outlineColor: Cesium.Color.WHITE,
+          outlineWidth: 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: '#1043',
+          font: 'bold 11px monospace',
+          fillColor: Cesium.Color.WHITE,
+          outlineColor: Cesium.Color.fromCssColorString('#0a0c14'),
+          outlineWidth: 3,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          pixelOffset: new Cesium.Cartesian2(0, -22),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+
+      // ── 3D flight-path polyline (live via CallbackProperty) ──────────
+      st.flightPath = [];
+      st.cesiumFlightPath = viewer.entities.add({
+        name: 'Flight Path',
+        polyline: {
+          positions: new Cesium.CallbackProperty(() => st.flightPath, false),
+          width: 3,
+          material: new Cesium.ColorMaterialProperty(
+            Cesium.Color.fromCssColorString('#4da3ff').withAlpha(0.85)
+          ),
+          arcType: Cesium.ArcType.NONE,
+        },
+      });
     }
 
     // ---------- CHART LOGIC (Graphs) ----------
@@ -270,16 +343,16 @@ if (!window.__DGS_BOOTED__) {
         xAxis: {
           type: 'category',
           data: [],
-          axisLabel: { show: true, color: gridColor, fontSize: 14 },
+          axisLabel: { show: true, color: gridColor, fontSize: 11 },
           splitLine: { show: true, lineStyle: { color: gridColor, opacity: 0.25 } } // Vertical grid lines
         },
         yAxis: {
           type: 'value',
           scale: true,
-          axisLabel: { color: gridColor, fontSize: 14 },
+          axisLabel: { color: gridColor, fontSize: 11 },
           splitLine: { lineStyle: { color: gridColor, opacity: 0.25 } }
         },
-        legend: { show: true, data: names, top: 0, textStyle: { color: getCssVar('--fg'), fontSize: 16 }, icon: 'roundRect' },
+        legend: { show: true, data: names, top: 0, textStyle: { color: getCssVar('--fg'), fontSize: 11 }, icon: 'roundRect' },
         series: names.map((n, i) => ({
           type: 'line',
           name: n,
@@ -351,10 +424,10 @@ if (!window.__DGS_BOOTED__) {
     }
 
 
-    // Resize charts when the window size changes
+    // Resize charts and Cesium globe when the window size changes
     window.addEventListener('resize', () => {
       Object.values(st.charts).forEach(c => c?.resize());
-      st.map?.invalidateSize();
+      st.cesiumViewer?.resize();
     });
 
     // ---------- TELEMETRY HANDLING (The Core Logic) ----------
@@ -441,18 +514,29 @@ if (!window.__DGS_BOOTED__) {
       pushChart(st.charts.accel, label, [t.accel_r_dps2, t.accel_p_dps2, t.accel_y_dps2]);
       pushChart(st.charts.gyro, label, [t.gyro_r_dps, t.gyro_p_dps, t.gyro_y_dps]);
 
-      // 8. Update Map
+      // 8. Update 3D Cesium Map
       if (t.gps_lat && t.gps_lon && typeof t.gps_lat === 'number' && typeof t.gps_lon === 'number') {
-        const pos = [t.gps_lat, t.gps_lon];
-        st.gps_lat = t.gps_lat;
-        st.gps_lon = t.gps_lon;
-        st.marker?.setLatLng(pos); // Move marker
-        st.map?.panTo(pos, { animate: false }); // Move camera
-        el.gpsMini && (el.gpsMini.textContent = `${t.gps_lat.toFixed(5)}, ${t.gps_lon.toFixed(5)} • sats: ${t.gps_sats ?? '—'}`);
-        el.gmapA && (el.gmapA.href = `https://maps.google.com/?q=${t.gps_lat},${t.gps_lon}`);
+        const lat = t.gps_lat, lon = t.gps_lon;
+        const alt = typeof t.altitude_m === 'number' ? Math.max(0, t.altitude_m) : 0;
+        st.gps_lat = lat;
+        st.gps_lon = lon;
 
-        // Update Recovery Marker if map is active
-        if (st.recoveryMarker) st.recoveryMarker.setLatLng(pos);
+        if (st.cesiumViewer) {
+          const pos3d = Cesium.Cartesian3.fromDegrees(lon, lat, alt);
+          // Move marker to current GPS + altitude
+          if (st.cesiumMarker) {
+            st.cesiumMarker.position = new Cesium.ConstantPositionProperty(pos3d);
+          }
+          // Append point to 3D flight trail
+          st.flightPath.push(pos3d);
+          if (st.flightPath.length > 600) st.flightPath.shift();
+        }
+
+        el.gpsMini && (el.gpsMini.textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)} • sats: ${t.gps_sats ?? '—'}`);
+        el.gmapA && (el.gmapA.href = `https://maps.google.com/?q=${lat},${lon}`);
+
+        // Keep recovery overlay marker in sync (Leaflet)
+        if (st.recoveryMarker) st.recoveryMarker.setLatLng([lat, lon]);
       }
 
       // 9. Update Text Log (bottom right box)

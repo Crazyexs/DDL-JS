@@ -7,6 +7,11 @@
   <title>DAEDALUS #1043 — Ground Station</title>
 
   <!-- Libs (Offline) -->
+  <!-- CesiumJS 3D globe — fully offline, NaturalEarthII bundled inside -->
+  <script>window.CESIUM_BASE_URL = '/vendor/cesium/Cesium/';</script>
+  <link rel="stylesheet" href="/vendor/cesium/Cesium/Widgets/widgets.css" />
+  <script src="/vendor/cesium/Cesium/Cesium.js"></script>
+  <!-- ECharts (charts) + Leaflet (recovery overlay only) -->
   <script src="/vendor/echarts.min.js"></script>
   <link rel="stylesheet" href="/vendor/leaflet.css" />
   <script src="/vendor/leaflet.js"></script>
