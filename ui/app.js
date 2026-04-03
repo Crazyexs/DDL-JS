@@ -31,6 +31,8 @@ if (!window.__DGS_BOOTED__) {
       cesiumMarker: null,    // Cesium entity for CanSat marker
       flightPath: [],        // Array of Cesium.Cartesian3 for 3D trail
       cesiumFlightPath: null,// Cesium polyline entity
+      cesiumAltStem: null,   // Vertical altitude line (ground → CanSat)
+      lastCesiumAlt: 0,      // Last known altitude for live callbacks
       map: null,             // [recovery overlay only] Leaflet
       marker: null,          // unused, kept for compat
       ws: null,      // The WebSocket connection to the server
@@ -271,36 +273,64 @@ if (!window.__DGS_BOOTED__) {
       // ── Flat WGS84 ellipsoid — zero terrain tile requests ───────────
       viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
 
-      // ── Default camera: look down at CanSat launch site ─────────────
+      // ── Camera: near-horizon angle so altitude is clearly visible ──────
       viewer.camera.setView({
-        destination: Cesium.Cartesian3.fromDegrees(98.985, 18.788, 8000),
+        destination: Cesium.Cartesian3.fromDegrees(98.978, 18.781, 1200),
         orientation: {
           heading: Cesium.Math.toRadians(0),
-          pitch:   Cesium.Math.toRadians(-45),
+          pitch:   Cesium.Math.toRadians(-22), // near-horizontal = shows altitude in air
           roll:    0.0,
         },
       });
 
-      // ── CanSat marker ────────────────────────────────────────────────
+      // ── CanSat marker (floats at GPS altitude, no ground-clamp) ────────
       st.cesiumMarker = viewer.entities.add({
         name: 'CanSat #1043',
         position: Cesium.Cartesian3.fromDegrees(98.985, 18.788, 0),
         point: {
-          pixelSize: 14,
+          pixelSize: 16,
           color: Cesium.Color.fromCssColorString('#4da3ff'),
           outlineColor: Cesium.Color.WHITE,
           outlineWidth: 2,
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          // No heightReference → NONE by default → floats at absolute altitude
         },
         label: {
-          text: '#1043',
-          font: 'bold 11px monospace',
+          // Live altitude text updated every telemetry packet via CallbackProperty
+          text: new Cesium.CallbackProperty(
+            () => `#1043\n${Math.round(st.lastCesiumAlt)} m`,
+            false
+          ),
+          font: 'bold 12px monospace',
           fillColor: Cesium.Color.WHITE,
           outlineColor: Cesium.Color.fromCssColorString('#0a0c14'),
           outlineWidth: 3,
           style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          pixelOffset: new Cesium.Cartesian2(0, -22),
+          pixelOffset: new Cesium.Cartesian2(0, -28),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          showBackground: true,
+          backgroundColor: Cesium.Color.fromCssColorString('#0a0c14').withAlpha(0.65),
+          backgroundPadding: new Cesium.Cartesian2(6, 4),
+        },
+      });
+
+      // ── Altitude stem: vertical line from ground directly to CanSat ───────
+      // This is the KEY visual that shows the CanSat is "in the air"
+      st.cesiumAltStem = viewer.entities.add({
+        name: 'Altitude Stem',
+        polyline: {
+          positions: new Cesium.CallbackProperty(() => {
+            if (st.gps_lat === null || st.gps_lon === null) return [];
+            return [
+              Cesium.Cartesian3.fromDegrees(st.gps_lon, st.gps_lat, 0),
+              Cesium.Cartesian3.fromDegrees(st.gps_lon, st.gps_lat, Math.max(1, st.lastCesiumAlt)),
+            ];
+          }, false),
+          width: 2,
+          material: new Cesium.ColorMaterialProperty(
+            Cesium.Color.fromCssColorString('#ffb454').withAlpha(0.9)
+          ),
+          arcType: Cesium.ArcType.NONE,
         },
       });
 
@@ -520,10 +550,11 @@ if (!window.__DGS_BOOTED__) {
         const alt = typeof t.altitude_m === 'number' ? Math.max(0, t.altitude_m) : 0;
         st.gps_lat = lat;
         st.gps_lon = lon;
+        st.lastCesiumAlt = alt;  // drives CallbackProperty on stem + label
 
         if (st.cesiumViewer) {
+          // Marker floats at real GPS altitude (no ground clamping)
           const pos3d = Cesium.Cartesian3.fromDegrees(lon, lat, alt);
-          // Move marker to current GPS + altitude
           if (st.cesiumMarker) {
             st.cesiumMarker.position = new Cesium.ConstantPositionProperty(pos3d);
           }
