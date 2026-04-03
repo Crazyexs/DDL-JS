@@ -33,8 +33,11 @@ if (!window.__DGS_BOOTED__) {
       cesiumFlightPath: null,// Cesium polyline entity
       cesiumAltStem: null,   // Vertical altitude line (ground → CanSat)
       lastCesiumAlt: 0,      // Last known altitude for live callbacks
-      map: null,             // [recovery overlay only] Leaflet
-      marker: null,          // unused, kept for compat
+      cesiumHasFix: false,   // True after first GPS → triggers auto-zoom
+      map: null,             // 2D Leaflet map (offline / toggled)
+      marker: null,          // Leaflet 2D marker
+      kmlPoints: [],         // [{lat,lon,alt}] collected for KML export
+      kmlExported: false,    // KML only exported once (at landing)
       ws: null,      // The WebSocket connection to the server
       lastGPSHMS: null,
       altZero: 0,
@@ -350,6 +353,8 @@ if (!window.__DGS_BOOTED__) {
 
       _cesiumSetupEntities(viewer);
 
+      if (el.mapToggle) el.mapToggle.textContent = '→ 2D';  // button shows current action
+
       // If WiFi drops mid-flight, switch to NaturalEarthII offline fallback
       window.addEventListener('offline', () => {
         try {
@@ -372,6 +377,7 @@ if (!window.__DGS_BOOTED__) {
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
         { maxZoom: 19 }).addTo(st.map);
       st.marker = L.marker([18.788, 98.985]).addTo(st.map);
+      if (el.mapToggle) el.mapToggle.textContent = '→ 3D';  // button shows current action
     }
 
     // ── Auto-detect WiFi and pick the right map ───────────────────────
@@ -388,6 +394,104 @@ if (!window.__DGS_BOOTED__) {
           initCesium3D();
         }, { once: true });
       }
+      // Wire toggle button
+      el.mapToggle?.addEventListener('click', toggleMap);
+    }
+
+    // ── Toggle between 3D Cesium and 2D Leaflet ──────────────────────
+    function toggleMap() {
+      if (st.cesiumViewer) {
+        // 3D → 2D
+        try { st.cesiumViewer.destroy(); } catch(e) {}
+        st.cesiumViewer = null; st.cesiumMarker = null;
+        st.cesiumAltStem = null; st.cesiumFlightPath = null;
+        if (el.mapEl) el.mapEl.innerHTML = '';
+        initLeaflet2D();
+        // Restore last known position on 2D map
+        if (st.gps_lat && st.gps_lon && st.marker) {
+          st.marker.setLatLng([st.gps_lat, st.gps_lon]);
+          st.map?.panTo([st.gps_lat, st.gps_lon]);
+        }
+      } else {
+        // 2D → 3D
+        if (st.map) { try { st.map.remove(); } catch(e) {} st.map = null; st.marker = null; }
+        if (el.mapEl) el.mapEl.innerHTML = '';
+        initCesium3D();
+        // If GPS already exists, zoom straight in after init
+        if (st.gps_lat && st.gps_lon) {
+          setTimeout(() => {
+            st.cesiumViewer?.camera.flyTo({
+              destination: Cesium.Cartesian3.fromDegrees(
+                st.gps_lon, st.gps_lat, Math.max(st.lastCesiumAlt + 500, 600)),
+              orientation: { heading: 0, pitch: Cesium.Math.toRadians(-30), roll: 0 },
+              duration: 1.5,
+            });
+          }, 600);
+        }
+      }
+    }
+
+    // ── KML export (Google Earth 3D flight path) ──────────────────────
+    // Triggered automatically when the CanSat LANDS.
+    // Open the downloaded .kml in Google Earth desktop or earth.google.com
+    function generateKML() {
+      if (st.kmlExported || st.kmlPoints.length < 2) return;
+      st.kmlExported = true;
+
+      const coords = st.kmlPoints
+        .map(p => `${p.lon.toFixed(6)},${p.lat.toFixed(6)},${p.alt.toFixed(1)}`)
+        .join('\n          ');
+      const first  = st.kmlPoints[0];
+      const last   = st.kmlPoints[st.kmlPoints.length - 1];
+      const apex   = st.kmlPoints.reduce((a, b) => a.alt > b.alt ? a : b);
+      const teamId = st.teamId || 1043;
+
+      const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>DAEDALUS #${teamId} Flight Path</name>
+    <description>Max altitude: ${Math.round(st.maxAlt)} m | Packets: ${st.kmlPoints.length}</description>
+    <Style id="path"><LineStyle><color>ff00aaff</color><width>3</width></LineStyle></Style>
+    <Style id="launch"><IconStyle><color>ff00cc00</color><scale>1.2</scale>
+      <Icon><href>http://maps.google.com/mapfiles/kml/paddle/go.png</href></Icon>
+    </IconStyle></Style>
+    <Style id="land"><IconStyle><color>ff0000ff</color><scale>1.2</scale>
+      <Icon><href>http://maps.google.com/mapfiles/kml/paddle/stop.png</href></Icon>
+    </IconStyle></Style>
+    <Style id="apex"><IconStyle><color>ff00ffff</color><scale>1.1</scale>
+      <Icon><href>http://maps.google.com/mapfiles/kml/shapes/star.png</href></Icon>
+    </IconStyle></Style>
+    <Placemark>
+      <name>Flight Path</name><styleUrl>#path</styleUrl>
+      <LineString>
+        <extrude>1</extrude><tessellate>1</tessellate>
+        <altitudeMode>absolute</altitudeMode>
+        <coordinates>
+          ${coords}
+        </coordinates>
+      </LineString>
+    </Placemark>
+    <Placemark><name>Launch</name><styleUrl>#launch</styleUrl>
+      <Point><altitudeMode>clampToGround</altitudeMode>
+        <coordinates>${first.lon.toFixed(6)},${first.lat.toFixed(6)},0</coordinates>
+      </Point></Placemark>
+    <Placemark><name>Landing</name><styleUrl>#land</styleUrl>
+      <Point><altitudeMode>clampToGround</altitudeMode>
+        <coordinates>${last.lon.toFixed(6)},${last.lat.toFixed(6)},0</coordinates>
+      </Point></Placemark>
+    <Placemark><name>Apogee (${Math.round(apex.alt)} m)</name><styleUrl>#apex</styleUrl>
+      <Point><altitudeMode>absolute</altitudeMode>
+        <coordinates>${apex.lon.toFixed(6)},${apex.lat.toFixed(6)},${apex.alt.toFixed(1)}</coordinates>
+      </Point></Placemark>
+  </Document>
+</kml>`;
+
+      const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url;  a.download = `DAEDALUS_${teamId}_flight.kml`;  a.click();
+      URL.revokeObjectURL(url);
+      info('📍 Google Earth KML downloaded! Open in Google Earth to view 3D flight path.');
     }
 
     // ---------- CHART LOGIC (Graphs) ----------
@@ -528,7 +632,8 @@ if (!window.__DGS_BOOTED__) {
           if (t.state === 'LANDED') {
             const timeStr = (t.mission_time || '').replace(/:/g, ' ');
             speak(`Mission Successful. Highest altitude reached: ${Math.round(st.maxAlt)} meters.`);
-            if (el.recoveryGroup) el.recoveryGroup.style.display = 'block'; // Show Recovery Button
+            if (el.recoveryGroup) el.recoveryGroup.style.display = 'block';
+            generateKML(); // Auto-export 3D flight path for Google Earth
           } else {
             speak(`State changed to ${t.state}.`);
           }
@@ -602,11 +707,28 @@ if (!window.__DGS_BOOTED__) {
           }
           st.flightPath.push(pos3d);
           if (st.flightPath.length > 600) st.flightPath.shift();
+          // Auto-zoom to first GPS fix
+          if (!st.cesiumHasFix) {
+            st.cesiumHasFix = true;
+            st.cesiumViewer.camera.flyTo({
+              destination: Cesium.Cartesian3.fromDegrees(lon, lat, 1500),
+              orientation: {
+                heading: Cesium.Math.toRadians(0),
+                pitch:   Cesium.Math.toRadians(-30),
+                roll:    0.0,
+              },
+              duration: 2.0,
+            });
+          }
         } else if (st.map) {
           // 2D mode: standard Leaflet pan + marker
           if (st.marker) st.marker.setLatLng([lat, lon]);
           st.map.panTo([lat, lon], { animate: false });
         }
+
+        // Collect GPS point for KML export
+        st.kmlPoints.push({ lat, lon, alt });
+        if (st.kmlPoints.length > 2000) st.kmlPoints.shift(); // cap memory
 
         el.gpsMini && (el.gpsMini.textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)} • sats: ${t.gps_sats ?? '—'}`);
         el.gmapA && (el.gmapA.href = `https://maps.google.com/?q=${lat},${lon}`);
