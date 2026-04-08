@@ -609,10 +609,9 @@ if (!window.__DGS_BOOTED__) {
     // ---------- TELEMETRY HANDLING (The Core Logic) ----------
 
     // Rotates the compass arrow
-    function updateCompass(heading) {
-      if (!el.compassArrow) return;
-      el.compassArrow.style.transform = `rotate(${heading || 0}deg)`;
-      el.heading.textContent = `${num(heading, 0)}°`;
+    function updateCompass(yaw) {
+      if (el.compassArrow) el.compassArrow.style.transform = `rotate(${yaw || 0}deg)`;
+      if (el.heading) el.heading.textContent = `${num(yaw, 0)}°`;
     }
 
     // This function runs EVERY TIME a new data packet arrives!
