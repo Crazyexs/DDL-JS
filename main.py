@@ -165,7 +165,6 @@ class GSState:
     rx_count: int = 0           # Total packets received
     loss_count: int = 0         # Total packets lost
     last_pkt: Optional[int] = None # The ID number of the last packet we saw
-    last_rx_time: float = 0.0   # Timestamp of the last received packet
     csv_ready: bool = False     # Is the CSV file ready to be written to?
     last_cmd: str = "—"         # The last command we sent
     sim_enabled: bool = False   # Is the simulation mode enabled?
@@ -181,7 +180,7 @@ _serial_writer_lock = asyncio.Lock()
 def ensure_csv_header():
     """Checks if the CSV file exists. If not, creates it and adds the header row."""
     if not CSV_CURRENT.exists():
-        CSV_CURRENT.write_text(CSV_HEADER + "\r\n", encoding="utf-8", newline="\r\n")
+        CSV_CURRENT.write_text(CSV_HEADER + "\r\n", encoding="utf-8", newline="")
     state.csv_ready = True
 
 ensure_csv_header()
@@ -444,27 +443,16 @@ async def handle_telemetry_line(raw: str):
     state.rx_count += 1
     # [REQ-78] Count the number of received packets
     
-    # Packet Loss Calculation (Time-based)
-    now = time.time()
-    if state.last_rx_time > 0:
-        dt = now - state.last_rx_time
-        # If gap is > 1.5s, we assume we missed packets (assuming 1Hz rate)
-        # [REQ-65] Telemetry shall include mission time with 1 second resolution (Checked in parser)
-        if dt > 1.5:
-            missed = int(round(dt)) - 1
-            if missed > 0:
-                state.loss_count += missed
-    state.last_rx_time = now
-
-    # Try to find packet count (Legacy / Optional check)
+    # Packet Loss Calculation (Sequence-based)
+    # [REQ-65] Uses packet_count field from telemetry to detect gaps accurately
     pkt = parsed_data.get("packet_count", 0)
-    
-    # if state.last_pkt is not None and pkt > state.last_pkt + 1:
-    #     state.loss_count += (pkt - state.last_pkt - 1)
+    if state.last_pkt is not None and pkt > 0:
+        if pkt > state.last_pkt + 1:
+            state.loss_count += pkt - state.last_pkt - 1
     state.last_pkt = pkt
 
     # 6) Send to UI
-    payload = tel.dict()
+    payload = tel.model_dump()
     payload['gs_raw_line'] = raw
     await broadcast_ws(payload)
     ring.append(json.dumps({"telemetry": payload}))
@@ -755,7 +743,7 @@ async def api_serial_bauds():
 @app.get("/api/serial/config")
 async def api_serial_get():
     """Gets current serial settings."""
-    return state.cfg.dict()
+    return state.cfg.model_dump()
 
 @app.post("/api/serial/config")
 async def api_serial_set(cfg: SerialCfg):
@@ -900,7 +888,7 @@ async def api_csv_save_now(payload: dict = Body(...)):
         i += 1
 
     content = CSV_HEADER + "\r\n" + "\r\n".join(rows) + "\r\n"
-    out_path.write_text(content, encoding="utf-8", newline="\r\n")
+    out_path.write_text(content, encoding="utf-8", newline="")
     return {"ok": True, "path": str(out_path)}
 
 # ---- WebSocket Endpoint ----

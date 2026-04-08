@@ -16,7 +16,7 @@ if (!window.__DGS_BOOTED__) {
     const pad = (n) => String(n).padStart(2, '0'); // Adds a zero in front (5 -> 05)
     const hms = (d = new Date()) => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; // Gets time as HH:MM:SS
     // This cleans text to prevent code injection attacks
-    const esc = (s) => String(s).replace(/[&<""']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+    const esc = (s) => String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
     // Formats a number (e.g., 12.3456 -> 12.3)
     const num = (x, d = 1) => (x === undefined || x === null || isNaN(+x)) ? '—' : (+x).toFixed(d);
     // Gets a color from the CSS file
@@ -979,7 +979,7 @@ if (!window.__DGS_BOOTED__) {
             speak("You have arrived at the payload.");
             st.arrivedSpoken = true;
           }
-        }, err => console.warn("Geo error", err), { enableHighAccuracy: true });
+        }, geoErr => console.warn("Geo error", geoErr), { enableHighAccuracy: true });
       } else {
         alert("Geolocation (External GPS) not supported or allowed.");
       }
