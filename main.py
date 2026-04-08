@@ -83,10 +83,8 @@ def load_telemetry_config():
 
 TELEMETRY_CONFIG = load_telemetry_config()
 
-# Build the CSV Header string dynamically from the config
-# We also add Ground Station specific columns at the end
-GS_HEADERS = ["GS_TIMESTAMP", "GS_PACKET_RX", "GS_PACKET_LOSS"]
-CSV_HEADER = ",".join([item.get("csv_header", "") for item in TELEMETRY_CONFIG] + GS_HEADERS)
+# Build the CSV Header string directly from the config (only what the CanSat sends)
+CSV_HEADER = ",".join([item.get("csv_header", "") for item in TELEMETRY_CONFIG])
 
 # ===================== LOGGING (Keeping records) =====================
 # This sets up a system to save important messages to a file named 'ground.jsonl'.
@@ -420,12 +418,7 @@ async def handle_telemetry_line(raw: str):
     # This '**parsed_data' magic passes the dictionary as arguments
     tel = Telemetry(**parsed_data)
 
-    # 3) Reconstruct the CLEAN CSV line
-    # We add the Ground Station metadata to the end of the clean CSV parts
-    clean_parts.append(parsed_data["gs_ts_utc"])
-    clean_parts.append(str(parsed_data["gs_rx_count"]))
-    clean_parts.append(str(parsed_data["gs_loss_total"]))
-    
+    # 3) Reconstruct the CLEAN CSV line (exactly what the CanSat sent, no GS columns)
     clean_csv = ",".join(clean_parts)
 
     # 4) Append to the CSV file
