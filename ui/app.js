@@ -648,7 +648,7 @@ if (!window.__DGS_BOOTED__) {
       // 2. Update Strip Displays
       el.missionMode && (el.missionMode.textContent = t.mode || '—');
       el.gpsSats && (el.gpsSats.textContent = t.gps_sats ?? '—');
-      updateCompass(t.heading);
+      updateCompass(t.yaw);
 
       // 3. Update Key Value Grid
       el.val_temp && (el.val_temp.textContent = `${num(t.temperature_c, 1)} °C`);

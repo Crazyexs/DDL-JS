@@ -21,6 +21,6 @@
   { "csv_header": "GPS_LONGITUDE", "internal_key": "gps_lon",        "type": "float" },
   { "csv_header": "GPS_SATS",      "internal_key": "gps_sats",       "type": "int" },
   { "csv_header": "CMD_ECHO",      "internal_key": "cmd_echo",       "type": "str" },
-  { "csv_header": "",              "internal_key": null,             "type": "skip" },
-  { "csv_header": "HEADING",       "internal_key": "heading",        "type": "float", "optional": true }
+  { "csv_header": "YAW",           "internal_key": "yaw",            "type": "float" },
+  { "csv_header": "TOF",           "internal_key": "tof",            "type": "float" }
 ]

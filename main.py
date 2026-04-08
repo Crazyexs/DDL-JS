@@ -147,10 +147,9 @@ class Telemetry(BaseModel):
     gps_lon: float = 0.0
     gps_sats: int = 0
     cmd_echo: str = "—"
-    
-    # Optional extra data
-    heading: Optional[float] = None
-    
+    yaw: float = 0.0
+    tof: float = 0.0
+
     # Extra info added by the Ground Station
     gs_ts_utc: str
     gs_rx_count: int
@@ -377,11 +376,6 @@ async def handle_telemetry_line(raw: str):
         val_str = parts[i] if i < len(parts) else ""
         val_str = val_str.strip()
         
-        # SKIP columns (like empty spaces in the spec)
-        if dtype == "skip":
-            clean_parts.append("") # Keep the empty space in the saved CSV
-            continue
-            
         # Convert the string to the correct type (int/float/str)
         value = None
         clean_str = val_str # Default for string types
@@ -611,7 +605,8 @@ def generate_dummy_telemetry_line() -> str:
         "gps_lon": f"{dummy_state['lon']:.4f}",
         "gps_sats": str(random.randint(8, 12)),
         "cmd_echo": "CMD_OK" if pkt % 10 != 0 else "CX,ON",
-        "heading": f"{(pkt * 5) % 360:.2f}",
+        "yaw": f"{(pkt * 5) % 360:.2f}",
+        "tof": f"{random.uniform(0, 5):.3f}",
     }
 
     # Build the line based on the config order
@@ -620,9 +615,7 @@ def generate_dummy_telemetry_line() -> str:
         key = cfg.get("internal_key")
         dtype = cfg.get("type")
         
-        if dtype == "skip":
-            line_parts.append("")
-        elif key in val_map:
+        if key in val_map:
             line_parts.append(val_map[key])
         else:
             # Default fallback for missing keys
