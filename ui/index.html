@@ -40,7 +40,7 @@
     <div class="status">
       <div id="connPill" class="pill">Disconnected</div>
       <button id="toggleAudio" class="btn sm primary" title="Toggle Voice Announcements">
-        🔊 Audio: ON
+        Audio: ON
       </button>
       <button id="toggleTheme" class="btn sm ghost" title="Toggle light/dark (saves)">
         Theme
@@ -68,10 +68,10 @@
     </div>
     <div class="group" id="recoveryGroup" style="display: none;">
       <button id="btnFindPayload" class="btn xl primary"
-        style="background-color: var(--ok); border-color: var(--ok);">📍 FIND PAYLOAD</button>
+        style="background-color: var(--ok); border-color: var(--ok);">FIND PAYLOAD</button>
     </div>
     <div class="group" style="flex-direction: column; align-items: flex-start; gap: 4px;">
-      <button id="btnPinGps" class="btn sm ghost" title="Paste a GPS coordinate to track distance from payload">📌 Pin GPS Target</button>
+      <button id="btnPinGps" class="btn sm ghost" title="Paste a GPS coordinate to track distance from payload">Pin GPS Target</button>
       <div style="display:flex; align-items:center; gap:6px;">
         <span class="k" style="font-size:11px;">Dist to Pin:</span>
         <span id="pinnedDistDisplay" class="v" style="font-size:16px; font-weight:700; color:var(--accent);">—</span>
@@ -105,7 +105,7 @@
         <div>GPS LOCATION <span id="gpsMiniTitle" class="gpsmini">—, — • sats: —</span></div>
         <div class="missionbar">
           <button id="btnStartMission" class="btn primary sm">Start Mission</button>
-          <button id="toggleMapSize" class="btn sm ghost" title="Switch between 3D and 2D map">↔ Map</button>
+          <button id="toggleMapSize" class="btn sm ghost" title="Switch between 3D and 2D map">Map Toggle</button>
           <div class="bigtime">T+ <b id="missionTimeBig">00:00:00</b></div>
         </div>
       </div>
@@ -222,11 +222,11 @@
     style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: var(--bg); z-index: 9999; flex-direction: column;">
     <div class="topbar">
       <div class="brandwrap">
-        <button id="btnCloseRecovery" class="btn lg danger" style="margin-right: 15px;">⬅ EXIT NAVIGATION</button>
+        <button id="btnCloseRecovery" class="btn lg danger" style="margin-right: 15px;">EXIT NAVIGATION</button>
         <div class="brand">PAYLOAD RECOVERY MODE</div>
       </div>
       <div class="status">
-        <button id="btnVoiceNav" class="btn sm primary">🔊 Voice Nav: ON</button>
+        <button id="btnVoiceNav" class="btn sm primary">Voice Nav: ON</button>
       </div>
     </div>
 

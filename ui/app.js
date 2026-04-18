@@ -495,7 +495,7 @@ if (!window.__DGS_BOOTED__) {
       const a    = document.createElement('a');
       a.href = url;  a.download = `DAEDALUS_${teamId}_flight.kml`;  a.click();
       URL.revokeObjectURL(url);
-      info('📍 Google Earth KML downloaded! Open in Google Earth to view 3D flight path.');
+      info('Google Earth KML downloaded! Open in Google Earth to view 3D flight path.');
     }
 
     // ---------- CHART LOGIC (Graphs) ----------
@@ -922,13 +922,13 @@ if (!window.__DGS_BOOTED__) {
     // ---------- RECOVERY MAP & AUDIO LOGIC ----------
     el.toggleAudio?.addEventListener('click', () => {
       st.audioEnabled = !st.audioEnabled;
-      el.toggleAudio.textContent = `🔊 Audio: ${st.audioEnabled ? 'ON' : 'OFF'}`;
+      el.toggleAudio.textContent = `Audio: ${st.audioEnabled ? 'ON' : 'OFF'}`;
       if (st.audioEnabled) speak("Audio Assistant Enabled");
     });
 
     el.btnVoiceNav?.addEventListener('click', () => {
       st.voiceNavEnabled = !st.voiceNavEnabled;
-      el.btnVoiceNav.textContent = `🔊 Voice Nav: ${st.voiceNavEnabled ? 'ON' : 'OFF'}`;
+      el.btnVoiceNav.textContent = `Voice Nav: ${st.voiceNavEnabled ? 'ON' : 'OFF'}`;
     });
 
     function initRecoveryMap() {
@@ -1025,7 +1025,7 @@ if (!window.__DGS_BOOTED__) {
       st.pinnedLat = lat;
       st.pinnedLon = lon;
       updatePinnedDist();
-      info(`📌 GPS pinned at ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+      info(`GPS pinned at ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
     });
 
     // ---------- THEME (Light/Dark Mode) ----------
