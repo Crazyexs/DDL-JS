@@ -59,6 +59,9 @@ if (!window.__DGS_BOOTED__) {
       arrivedSpoken: false,
       // Dummy data state
       dummy: { id: null, packet: 0, lat: 18.788, lon: 98.985 },
+      // Pinned GPS target (user-defined landing zone)
+      pinnedLat: null,
+      pinnedLon: null,
     };
 
     // ---------- DOM ELEMENTS (Links to HTML items) ----------
@@ -100,6 +103,10 @@ if (!window.__DGS_BOOTED__) {
       // New buttons
       btnOpenCsvFolder: $("#btnOpenCsvFolder"),
       btnSim: $("#btnSim"),
+
+      // Pin GPS target
+      btnPinGps: $("#btnPinGps"),
+      pinnedDistDisplay: $("#pinnedDistDisplay"),
 
       // Recovery Mode
       recoveryGroup: $("#recoveryGroup"),
@@ -203,8 +210,16 @@ if (!window.__DGS_BOOTED__) {
 
       el.rawBox.appendChild(line);
 
-      // Auto-scroll to the bottom unless the user paused it
-      if (el.auto?.checked && !el.freeze?.checked) el.rawBox.scrollTop = el.rawBox.scrollHeight;
+      // Throttled auto-scroll (Pi: avoids layout thrashing on low-CPU hardware)
+      if (el.auto?.checked && !el.freeze?.checked) {
+        if (!el.rawBox._scrollPending) {
+          el.rawBox._scrollPending = true;
+          requestAnimationFrame(() => {
+            el.rawBox.scrollTop = el.rawBox.scrollHeight;
+            el.rawBox._scrollPending = false;
+          });
+        }
+      }
     }
 
     // Shortcuts for logging
@@ -380,22 +395,11 @@ if (!window.__DGS_BOOTED__) {
       if (el.mapToggle) el.mapToggle.textContent = '→ 3D';  // button shows current action
     }
 
-    // ── Auto-detect WiFi and pick the right map ───────────────────────
+    // ── Raspberry Pi: always 2D Leaflet only (no Cesium/3D) ─────────────
     function initMap() {
       if (!el.mapEl) return;
-      if (navigator.onLine) {
-        initCesium3D();  // WiFi ✓ → 3D satellite globe
-      } else {
-        initLeaflet2D(); // No WiFi → 2D Leaflet (may show cached OSM tiles)
-        // Auto-upgrade to 3D if WiFi comes back
-        window.addEventListener('online', () => {
-          if (st.map) { try { st.map.remove(); } catch(e) {} st.map = null; st.marker = null; }
-          if (el.mapEl) el.mapEl.innerHTML = '';
-          initCesium3D();
-        }, { once: true });
-      }
-      // Wire toggle button
-      el.mapToggle?.addEventListener('click', toggleMap);
+      initLeaflet2D();
+      if (el.mapToggle) el.mapToggle.style.display = 'none'; // Pi has no 3D
     }
 
     // ── Toggle between 3D Cesium and 2D Leaflet ──────────────────────
@@ -734,6 +738,9 @@ if (!window.__DGS_BOOTED__) {
 
         // Keep recovery overlay marker in sync (Leaflet)
         if (st.recoveryMarker) st.recoveryMarker.setLatLng([lat, lon]);
+
+        // Update pinned GPS distance
+        updatePinnedDist();
       }
 
       // 9. Update Text Log (bottom right box)
@@ -990,6 +997,35 @@ if (!window.__DGS_BOOTED__) {
         navigator.geolocation.clearWatch(st.geoWatchId);
         st.geoWatchId = undefined;
       }
+    });
+
+    // ---------- PIN GPS TARGET ----------
+    function updatePinnedDist() {
+      if (!el.pinnedDistDisplay) return;
+      if (st.pinnedLat === null || st.pinnedLon === null || !st.gps_lat || !st.gps_lon) {
+        el.pinnedDistDisplay.textContent = '—';
+        return;
+      }
+      const d = calcDistance(st.gps_lat, st.gps_lon, st.pinnedLat, st.pinnedLon);
+      el.pinnedDistDisplay.textContent = d < 1000
+        ? `${Math.round(d)} m`
+        : `${(d / 1000).toFixed(2)} km`;
+    }
+
+    el.btnPinGps?.addEventListener('click', () => {
+      const raw = prompt('Paste GPS coordinates (lat, lon):\nExample: 18.7880, 98.9850');
+      if (!raw) return;
+      const parts = raw.trim().split(/[\s,;]+/);
+      const lat = parseFloat(parts[0]);
+      const lon = parseFloat(parts[1]);
+      if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+        alert('Invalid coordinates. Use format: 18.7880, 98.9850');
+        return;
+      }
+      st.pinnedLat = lat;
+      st.pinnedLon = lon;
+      updatePinnedDist();
+      info(`📌 GPS pinned at ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
     });
 
     // ---------- THEME (Light/Dark Mode) ----------
