@@ -116,3 +116,11 @@ dmypy.json
 # Personal files
 /sim_pressure.csv
 /data/Flight_1043.csv
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Runtime data (generated at runtime, not source)
+logs/
+data/
