@@ -840,11 +840,6 @@ if (!window.__DGS_BOOTED__) {
           info('Stopping dummy data on server...');
           return;
         }
-        if (command === '/clear') {
-          el.rawBox && (el.rawBox.innerHTML = '');
-          info('Log view cleared.');
-          return;
-        }
         err(`Unknown local command: ${cmd}`);
         return;
       }
