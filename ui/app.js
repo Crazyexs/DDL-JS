@@ -210,8 +210,16 @@ if (!window.__DGS_BOOTED__) {
 
       el.rawBox.appendChild(line);
 
-      // Auto-scroll to the bottom unless the user paused it
-      if (el.auto?.checked && !el.freeze?.checked) el.rawBox.scrollTop = el.rawBox.scrollHeight;
+      // Throttled auto-scroll (Pi: avoids layout thrashing on low-CPU hardware)
+      if (el.auto?.checked && !el.freeze?.checked) {
+        if (!el.rawBox._scrollPending) {
+          el.rawBox._scrollPending = true;
+          requestAnimationFrame(() => {
+            el.rawBox.scrollTop = el.rawBox.scrollHeight;
+            el.rawBox._scrollPending = false;
+          });
+        }
+      }
     }
 
     // Shortcuts for logging
