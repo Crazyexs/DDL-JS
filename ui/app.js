@@ -788,14 +788,28 @@ if (!window.__DGS_BOOTED__) {
 
     // ---------- COMMANDS (Sending data to satellite) ----------
     const QUICK_COMMANDS = [
+      // Telemetry
       'CX,ON', 'CX,OFF',
+      // Calibration & Reset
       'CAL', 'RESET',
-      'ST,GPS',
+      // Simulation
       'SIM,ENABLE', 'SIM,ACTIVATE', 'SIM,DISABLE',
+      // Mechanical — Payload release servo
       'MEC,PL,ON', 'MEC,PL,OFF',
+      // Mechanical — Instrument bay servo
       'MEC,INS,ON', 'MEC,INS,OFF',
-      'MEC,PAR,ON', 'MEC,PAR,OFF',
-      '/dummy.on', '/dummy.off'
+      // Mechanical — Parachute spin motor
+      'MEC,PAR,CW', 'MEC,PAR,ACW', 'MEC,PAR,OFF',
+      // Local GCS only
+      '/dummy.on', '/dummy.off',
+    ];
+
+    // Commands that require a numeric value typed after the prefix
+    const PARAM_COMMANDS = [
+      { prefix: 'SIMP,',        label: 'SIMP,<pressure>',       hint: 'Enter simulated pressure (Pa):' },
+      { prefix: 'SET,MAIN_ALT,', label: 'SET,MAIN_ALT,<alt_m>', hint: 'Enter main chute deployment altitude (m):' },
+      { prefix: 'SERVO,A,',     label: 'SERVO,A,<0-180>',       hint: 'Enter servo A angle (0–180):' },
+      { prefix: 'SERVO,B,',     label: 'SERVO,B,<0-180>',       hint: 'Enter servo B angle (0–180):' },
     ];
 
     // Populates the dropdown menu
@@ -805,6 +819,7 @@ if (!window.__DGS_BOOTED__) {
       const opt0 = document.createElement('option'); opt0.value = ''; opt0.textContent = '— Quick Command —';
       el.quick.append(opt0);
       QUICK_COMMANDS.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; el.quick.append(o); });
+      PARAM_COMMANDS.forEach(p => { const o = document.createElement('option'); o.value = '__param__' + p.prefix; o.textContent = p.label; el.quick.append(o); });
     }
 
     // Sends the command to the backend
@@ -854,7 +869,20 @@ if (!window.__DGS_BOOTED__) {
       }
     }
 
-    el.quick?.addEventListener('change', () => { if (el.quick.value && el.manual) { el.manual.value = el.quick.value; el.quick.value = ''; } });
+    el.quick?.addEventListener('change', () => {
+      const val = el.quick.value;
+      if (!val) return;
+      el.quick.value = '';
+      if (val.startsWith('__param__')) {
+        const prefix = val.slice(9);
+        const paramDef = PARAM_COMMANDS.find(p => p.prefix === prefix);
+        const input = prompt(paramDef?.hint || `Enter value for ${prefix}`);
+        if (input === null || input.trim() === '') return;
+        sendCommand(prefix + input.trim());
+      } else {
+        if (el.manual) el.manual.value = val;
+      }
+    });
     el.send?.addEventListener('click', () => { const v = (el.manual?.value || '').trim(); if (!v) return; sendCommand(v); if (el.manual) el.manual.value = ''; });
     el.manual?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.send.click(); } });
 
