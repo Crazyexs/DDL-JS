@@ -3,7 +3,7 @@ import socket
 import random
 import math
 
-# main.py — DAEDALUS GS (Consolidated, clean)
+
 
 import os
 import sys
