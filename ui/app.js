@@ -103,6 +103,7 @@ if (!window.__DGS_BOOTED__) {
       // New buttons
       btnOpenCsvFolder: $("#btnOpenCsvFolder"),
       btnSim: $("#btnSim"),
+      btnExportKML: $("#btnExportKML"),
 
       // Pin GPS target
       btnPinGps: $("#btnPinGps"),
@@ -447,8 +448,12 @@ if (!window.__DGS_BOOTED__) {
     }
 
     // ── KML export (Google Earth 3D flight path) ──────────────────────
-    // Triggered automatically when the CanSat LANDS.
-    // Open the downloaded .kml in Google Earth desktop or earth.google.com
+    // Triggered automatically when the CanSat LANDS, or manually via button.
+    el.btnExportKML?.addEventListener('click', () => {
+      st.kmlExported = false; // Allow manual re-export
+      generateKML();
+    });
+
     function generateKML() {
       if (st.kmlExported || st.kmlPoints.length < 2) return;
       st.kmlExported = true;
