@@ -59,6 +59,9 @@ if (!window.__DGS_BOOTED__) {
       arrivedSpoken: false,
       // Dummy data state
       dummy: { id: null, packet: 0, lat: 18.788, lon: 98.985 },
+      // Pinned GPS target (user-defined landing zone)
+      pinnedLat: null,
+      pinnedLon: null,
     };
 
     // ---------- DOM ELEMENTS (Links to HTML items) ----------
@@ -100,6 +103,10 @@ if (!window.__DGS_BOOTED__) {
       // New buttons
       btnOpenCsvFolder: $("#btnOpenCsvFolder"),
       btnSim: $("#btnSim"),
+
+      // Pin GPS target
+      btnPinGps: $("#btnPinGps"),
+      pinnedDistDisplay: $("#pinnedDistDisplay"),
 
       // Recovery Mode
       recoveryGroup: $("#recoveryGroup"),
@@ -734,6 +741,9 @@ if (!window.__DGS_BOOTED__) {
 
         // Keep recovery overlay marker in sync (Leaflet)
         if (st.recoveryMarker) st.recoveryMarker.setLatLng([lat, lon]);
+
+        // Update pinned GPS distance
+        updatePinnedDist();
       }
 
       // 9. Update Text Log (bottom right box)
@@ -1013,6 +1023,35 @@ if (!window.__DGS_BOOTED__) {
         navigator.geolocation.clearWatch(st.geoWatchId);
         st.geoWatchId = undefined;
       }
+    });
+
+    // ---------- PIN GPS TARGET ----------
+    function updatePinnedDist() {
+      if (!el.pinnedDistDisplay) return;
+      if (st.pinnedLat === null || st.pinnedLon === null || !st.gps_lat || !st.gps_lon) {
+        el.pinnedDistDisplay.textContent = '—';
+        return;
+      }
+      const d = calcDistance(st.gps_lat, st.gps_lon, st.pinnedLat, st.pinnedLon);
+      el.pinnedDistDisplay.textContent = d < 1000
+        ? `${Math.round(d)} m`
+        : `${(d / 1000).toFixed(2)} km`;
+    }
+
+    el.btnPinGps?.addEventListener('click', () => {
+      const raw = prompt('Paste GPS coordinates (lat, lon):\nExample: 18.7880, 98.9850');
+      if (!raw) return;
+      const parts = raw.trim().split(/[\s,;]+/);
+      const lat = parseFloat(parts[0]);
+      const lon = parseFloat(parts[1]);
+      if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+        alert('Invalid coordinates. Use format: 18.7880, 98.9850');
+        return;
+      }
+      st.pinnedLat = lat;
+      st.pinnedLon = lon;
+      updatePinnedDist();
+      info(`GPS pinned at ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
     });
 
     // ---------- THEME (Light/Dark Mode) ----------
