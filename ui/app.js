@@ -715,53 +715,58 @@ if (!window.__DGS_BOOTED__) {
       pushChart(st.charts.accel, label, [t.accel_r_dps2, t.accel_p_dps2, t.accel_y_dps2]);
       pushChart(st.charts.gyro, label, [t.gyro_r_dps, t.gyro_p_dps, t.gyro_y_dps]);
 
-      // 8. Update 3D Cesium Map
+      // 8. Update 3D Cesium Map & KML Export
       if (t.gps_lat && t.gps_lon && typeof t.gps_lat === 'number' && typeof t.gps_lon === 'number') {
         const lat = t.gps_lat, lon = t.gps_lon;
         const alt = typeof t.altitude_m === 'number' ? Math.max(0, t.altitude_m) : 0;
-        st.gps_lat = lat;
-        st.gps_lon = lon;
-        st.lastCesiumAlt = alt;  // drives CallbackProperty on stem + label
-
-        if (st.cesiumViewer) {
-          // 3D mode: marker floats at real GPS altitude
-          const pos3d = Cesium.Cartesian3.fromDegrees(lon, lat, alt);
-          if (st.cesiumMarker) {
-            st.cesiumMarker.position = new Cesium.ConstantPositionProperty(pos3d);
-          }
-          st.flightPath.push(pos3d);
-          if (st.flightPath.length > 600) st.flightPath.shift();
-          // Auto-zoom to first GPS fix
-          if (!st.cesiumHasFix) {
-            st.cesiumHasFix = true;
-            st.cesiumViewer.camera.flyTo({
-              destination: Cesium.Cartesian3.fromDegrees(lon, lat, 1500),
-              orientation: {
-                heading: Cesium.Math.toRadians(0),
-                pitch:   Cesium.Math.toRadians(-30),
-                roll:    0.0,
-              },
-              duration: 2.0,
-            });
-          }
-        } else if (st.map) {
-          // 2D mode: standard Leaflet pan + marker
-          if (st.marker) st.marker.setLatLng([lat, lon]);
-          st.map.panTo([lat, lon], { animate: false });
-        }
-
-        // Collect GPS point for KML export
-        st.kmlPoints.push({ lat, lon, alt });
-        if (st.kmlPoints.length > 2000) st.kmlPoints.shift(); // cap memory
-
+        
+        // Update UI text regardless of satellite count
         el.gpsMini && (el.gpsMini.textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)} • sats: ${t.gps_sats ?? '—'}`);
         el.gmapA && (el.gmapA.href = `https://maps.google.com/?q=${lat},${lon}`);
 
-        // Keep recovery overlay marker in sync (Leaflet)
-        if (st.recoveryMarker) st.recoveryMarker.setLatLng([lat, lon]);
+        // Only plot coordinates when we have a solid GPS 3D fix (> 3 sats)
+        if (Number(t.gps_sats) > 3) {
+          st.gps_lat = lat;
+          st.gps_lon = lon;
+          st.lastCesiumAlt = alt;
 
-        // Update pinned GPS distance
-        updatePinnedDist();
+          if (st.cesiumViewer) {
+            // 3D mode: marker floats at real GPS altitude
+            const pos3d = Cesium.Cartesian3.fromDegrees(lon, lat, alt);
+            if (st.cesiumMarker) {
+              st.cesiumMarker.position = new Cesium.ConstantPositionProperty(pos3d);
+            }
+            st.flightPath.push(pos3d);
+            if (st.flightPath.length > 600) st.flightPath.shift();
+            // Auto-zoom to first GPS fix
+            if (!st.cesiumHasFix) {
+              st.cesiumHasFix = true;
+              st.cesiumViewer.camera.flyTo({
+                destination: Cesium.Cartesian3.fromDegrees(lon, lat, 1500),
+                orientation: {
+                  heading: Cesium.Math.toRadians(0),
+                  pitch:   Cesium.Math.toRadians(-30),
+                  roll:    0.0,
+                },
+                duration: 2.0,
+              });
+            }
+          } else if (st.map) {
+            // 2D mode: standard Leaflet pan + marker
+            if (st.marker) st.marker.setLatLng([lat, lon]);
+            st.map.panTo([lat, lon], { animate: false });
+          }
+
+          // Collect GPS point for KML export
+          st.kmlPoints.push({ lat, lon, alt });
+          if (st.kmlPoints.length > 2000) st.kmlPoints.shift(); // cap memory
+
+          // Keep recovery overlay marker in sync (Leaflet)
+          if (st.recoveryMarker) st.recoveryMarker.setLatLng([lat, lon]);
+
+          // Update pinned GPS distance
+          updatePinnedDist();
+        }
       }
 
       // 9. Update Text Log (bottom right box)
