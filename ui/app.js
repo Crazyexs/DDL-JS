@@ -455,7 +455,12 @@ if (!window.__DGS_BOOTED__) {
     });
 
     function generateKML() {
-      if (st.kmlExported || st.kmlPoints.length < 2) return;
+      if (st.kmlPoints.length < 2) {
+        // If triggered manually by button, tell them why it failed
+        if (!st.kmlExported && el.btnExportKML) info('Not enough GPS data to generate a map yet.');
+        return;
+      }
+      if (st.kmlExported) return;
       st.kmlExported = true;
 
       const coords = st.kmlPoints
