@@ -791,7 +791,7 @@ if (!window.__DGS_BOOTED__) {
       // Telemetry
       'CX,ON', 'CX,OFF',
       // Calibration & Reset
-      'CAL', 'RESET',
+      'CAL', 'RESET', 'CAL,MAG,START', 'CAL,NORTH', 'CAL,MAG,STATUS', 'CAL,MAG,RESET',
       // Simulation
       'SIM,ENABLE', 'SIM,ACTIVATE', 'SIM,DISABLE',
       // Mechanical — Payload release servo
