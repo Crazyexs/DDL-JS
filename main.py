@@ -177,7 +177,7 @@ _serial_writer_lock = asyncio.Lock()
 def ensure_csv_header():
     """Checks if the CSV file exists. If not, creates it and adds the header row."""
     if not CSV_CURRENT.exists():
-        CSV_CURRENT.write_text(CSV_HEADER + "\r\n", encoding="utf-8", newline="")
+        CSV_CURRENT.write_bytes((CSV_HEADER + "\r\n").encode("utf-8"))
     state.csv_ready = True
 
 ensure_csv_header()
@@ -874,7 +874,7 @@ async def api_csv_save_now(payload: dict = Body(...)):
         i += 1
 
     content = CSV_HEADER + "\r\n" + "\r\n".join(rows) + "\r\n"
-    out_path.write_text(content, encoding="utf-8", newline="")
+    out_path.write_bytes(content.encode("utf-8"))
     return {"ok": True, "path": str(out_path)}
 
 # ---- WebSocket Endpoint ----
