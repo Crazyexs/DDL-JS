@@ -124,6 +124,9 @@ ui/tiles/
 .DS_Store
 **/.DS_Store
 
+# Local scratch / temp scripts
+scratch/
+
 # Runtime data (generated at runtime, not source)
 logs/
 data/
