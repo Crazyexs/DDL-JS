@@ -492,9 +492,10 @@ async def handle_telemetry_line(raw: str):
     # 4b) Auto-save KML (Google Earth) — collect GPS points and write to disk
     gps_lat = parsed_data.get("gps_lat", 0.0)
     gps_lon = parsed_data.get("gps_lon", 0.0)
+    gps_sats = parsed_data.get("gps_sats", 0)
     alt_m = parsed_data.get("altitude_m", 0.0)
     if isinstance(gps_lat, (int, float)) and isinstance(gps_lon, (int, float)):
-        if gps_lat != 0.0 and gps_lon != 0.0:  # Only save valid GPS fixes
+        if gps_lat != 0.0 and gps_lon != 0.0 and gps_sats > 5:  # Only save with good GPS fix (>5 sats)
             state.kml_points.append({"lat": gps_lat, "lon": gps_lon, "alt": max(0, alt_m)})
             if alt_m > state.kml_max_alt:
                 state.kml_max_alt = alt_m
