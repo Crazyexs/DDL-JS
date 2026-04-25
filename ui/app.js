@@ -832,14 +832,16 @@ if (!window.__DGS_BOOTED__) {
 
     // Commands that require a numeric value typed after the prefix
     const PARAM_COMMANDS = [
-      { prefix: 'SIMP,',         label: 'SIMP,<pressure>',        hint: 'Enter simulated pressure (Pa):' },
-      { prefix: 'SET,MAIN_ALT,', label: 'SET,MAIN_ALT,<alt_m>',   hint: 'Enter main chute deployment altitude (m):' },
-      { prefix: 'SET,TX_RATE,',  label: 'SET,TX_RATE,<1-10>',     hint: 'Enter telemetry TX rate (1–10 Hz):' },
-      { prefix: 'SET,INS_TOF,',  label: 'SET,INS_TOF,<val>',     hint: 'Enter instrument ToF threshold (m):' },
-      { prefix: 'SET,INS_NEAR,', label: 'SET,INS_NEAR,<val>',    hint: 'Enter instrument near threshold (m):' },
-      { prefix: 'SET,INS_CRIT,', label: 'SET,INS_CRIT,<val>',    hint: 'Enter instrument critical threshold (m):' },
-      { prefix: 'SERVO,A,',      label: 'SERVO,A,<0-180>',        hint: 'Enter servo A angle (0–180):' },
-      { prefix: 'SERVO,B,',      label: 'SERVO,B,<0-180>',        hint: 'Enter servo B angle (0–180):' },
+      { prefix: 'SIMP,',           label: 'SIMP,<pressure>',          hint: 'Enter simulated pressure (Pa):' },
+      { prefix: 'SET,MAIN_ALT,',   label: 'SET,MAIN_ALT,<alt_m>',     hint: 'Enter main chute deployment altitude (m):' },
+      { prefix: 'SET,APOGEE_ALT,', label: 'SET,APOGEE_ALT,<alt_m>',   hint: 'Enter apogee altitude threshold (m):' },
+      { prefix: 'SET,TX_RATE,',    label: 'SET,TX_RATE,<1-10>',       hint: 'Enter telemetry TX rate (1–10 Hz):' },
+      { prefix: 'SET,INS_TOF,',    label: 'SET,INS_TOF,<val>',       hint: 'Enter instrument ToF threshold (m):' },
+      { prefix: 'SET,INS_NEAR,',   label: 'SET,INS_NEAR,<val>',      hint: 'Enter instrument near threshold (m):' },
+      { prefix: 'SET,INS_CRIT,',   label: 'SET,INS_CRIT,<val>',      hint: 'Enter instrument critical threshold (m):' },
+      { prefix: 'CAL,TOF,',        label: 'CAL,TOF,<dist_mm>',       hint: 'Enter VL53L1X calibration distance (mm):' },
+      { prefix: 'SERVO,A,',        label: 'SERVO,A,<0-180>',          hint: 'Enter servo A angle (0–180):' },
+      { prefix: 'SERVO,B,',        label: 'SERVO,B,<0-180>',          hint: 'Enter servo B angle (0–180):' },
     ];
 
     // Populates the dropdown menu
