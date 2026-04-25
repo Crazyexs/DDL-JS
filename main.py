@@ -4,6 +4,7 @@ import random
 import math
 
 
+
 import os
 import sys
 import json
@@ -164,6 +165,7 @@ class GSState:
     csv_ready: bool = False     # Is the CSV file ready to be written to?
     last_cmd: str = "—"         # The last command we sent
     sim_enabled: bool = False   # Is the simulation mode enabled?
+    csv_save_raw: bool = False  # Save everything (raw mode) or only clean matched telemetry
     # KML auto-save: collect GPS points for Google Earth export
     kml_points: list = field(default_factory=list)  # [{lat, lon, alt}]
     kml_max_alt: float = 0.0    # Track max altitude for KML metadata
@@ -405,6 +407,10 @@ async def handle_telemetry_line(raw: str):
     This is the core function that handles each line of data received.
     It uses 'TELEMETRY_CONFIG' to know which column is which.
     """
+    if state.csv_ready and state.csv_save_raw:
+        async with aiofiles.open(CSV_CURRENT, "a", encoding="utf-8", newline="") as f:
+            await f.write(raw + "\r\n")
+
     # Use csv.reader to handle quoted fields correctly (e.g., "CX,ON")
     reader = csv.reader([raw], skipinitialspace=True)
     try:
@@ -484,7 +490,7 @@ async def handle_telemetry_line(raw: str):
     clean_csv = ",".join(clean_parts)
 
     # 4) Append to the CSV file
-    if state.csv_ready:
+    if state.csv_ready and not state.csv_save_raw:
         async with aiofiles.open(CSV_CURRENT, "a", encoding="utf-8", newline="") as f:
             await f.write(clean_csv + "\r\n")
 
@@ -827,6 +833,16 @@ async def api_serial_set(cfg: SerialCfg):
             _serial_port = None
             
     return {"ok": True}
+
+class CsvModeBody(BaseModel):
+    raw: bool
+
+@app.post("/api/csv/mode")
+async def api_csv_mode(body: CsvModeBody):
+    """Toggles whether the CSV saves exactly what the payload sends or filters to config."""
+    state.csv_save_raw = body.raw
+    log_json(event="csv_mode_changed", raw_mode=body.raw)
+    return {"ok": True, "raw": state.csv_save_raw}
 
 # ---- Command uplink ----
 @app.post("/api/command")

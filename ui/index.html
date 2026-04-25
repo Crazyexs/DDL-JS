@@ -58,6 +58,10 @@
       <div class="k">Altitude (m)</div>
       <div id="liveAltitude" class="v">--</div>
     </div>
+    <div class="kv-major-large" id="fallSpeedBox" style="display: none;">
+      <div class="k" style="color: var(--warn);">Avg Fall Speed</div>
+      <div id="val_fall_speed" class="v" style="color: var(--warn);">-- m/s</div>
+    </div>
     <div class="kv-major">
       <div class="k">Mode</div>
       <div id="missionMode" class="v">--</div>
@@ -93,7 +97,9 @@
     </div>
     <div class="group">
       <button id="btnOpenCsvFolder" class="btn sm">Log Folder</button>
+      <button id="btnCsvMode" class="btn sm ghost" title="Toggle CSV Filter Mode">CSV: CLEAN</button>
       <button id="btnSim" class="btn sm">Run Sim</button>
+      <button id="btnExportKML" class="btn sm primary">Export KML</button>
     </div>
   </section>
 
@@ -152,13 +158,29 @@
           <div class="k">Pressure</div>
           <div id="val_pressure" class="v">-- kPa</div>
         </div>
-        <div class="kv-cell">
-          <div class="k">Voltage</div>
-          <div id="val_voltage" class="v">-- V</div>
+        <div class="kv-cell" style="grid-column: span 2; display: flex; flex-direction: column; justify-content: center;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 4px;">
+            <div>
+              <div class="k">Battery (2S Li-ion)</div>
+              <div id="val_voltage" class="v">-- V</div>
+            </div>
+            <div id="val_battery_pct" class="v" style="color: var(--ok); font-size: 18px;">--%</div>
+          </div>
+          <div style="width: 100%; height: 6px; background: color-mix(in oklab, var(--edge) 50%, transparent 50%); border-radius: 3px; overflow: hidden;">
+             <div id="battery_bar" style="height: 100%; width: 0%; background: var(--ok); transition: width 0.3s, background-color 0.3s;"></div>
+          </div>
         </div>
         <div class="kv-cell">
           <div class="k">Current</div>
           <div id="val_current" class="v">-- A</div>
+        </div>
+        <div class="kv-cell">
+          <div class="k">Speed</div>
+          <div id="val_speed" class="v">-- m/s</div>
+        </div>
+        <div class="kv-cell">
+          <div class="k">G Force</div>
+          <div id="val_gforce" class="v">-- G</div>
         </div>
 
         <div class="kv-group">
