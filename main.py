@@ -165,8 +165,71 @@ class GSState:
     csv_ready: bool = False     # Is the CSV file ready to be written to?
     last_cmd: str = "—"         # The last command we sent
     sim_enabled: bool = False   # Is the simulation mode enabled?
+    # KML auto-save: collect GPS points for Google Earth export
+    kml_points: list = field(default_factory=list)  # [{lat, lon, alt}]
+    kml_max_alt: float = 0.0    # Track max altitude for KML metadata
 
 state = GSState()
+
+# ===================== KML AUTO-SAVE =====================
+KML_CURRENT = DATA_DIR / f"Flight_{TEAM_ID:04}.kml"
+
+def _build_kml(points: list, max_alt: float) -> str:
+    """Builds a KML string from collected GPS points."""
+    if len(points) < 2:
+        return ""
+    coords = "\n          ".join(
+        f"{p['lon']:.6f},{p['lat']:.6f},{p['alt']:.1f}" for p in points
+    )
+    first = points[0]
+    last = points[-1]
+    apex = max(points, key=lambda p: p['alt'])
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>DAEDALUS #{TEAM_ID} Flight Path</name>
+    <description>Max altitude: {int(max_alt)} m | Packets: {len(points)}</description>
+    <Style id="path"><LineStyle><color>ff00aaff</color><width>3</width></LineStyle></Style>
+    <Style id="launch"><IconStyle><color>ff00cc00</color><scale>1.2</scale>
+      <Icon><href>http://maps.google.com/mapfiles/kml/paddle/go.png</href></Icon>
+    </IconStyle></Style>
+    <Style id="land"><IconStyle><color>ff0000ff</color><scale>1.2</scale>
+      <Icon><href>http://maps.google.com/mapfiles/kml/paddle/stop.png</href></Icon>
+    </IconStyle></Style>
+    <Style id="apex"><IconStyle><color>ff00ffff</color><scale>1.1</scale>
+      <Icon><href>http://maps.google.com/mapfiles/kml/shapes/star.png</href></Icon>
+    </IconStyle></Style>
+    <Placemark>
+      <name>Flight Path</name><styleUrl>#path</styleUrl>
+      <LineString>
+        <extrude>1</extrude><tessellate>1</tessellate>
+        <altitudeMode>absolute</altitudeMode>
+        <coordinates>
+          {coords}
+        </coordinates>
+      </LineString>
+    </Placemark>
+    <Placemark><name>Launch</name><styleUrl>#launch</styleUrl>
+      <Point><altitudeMode>clampToGround</altitudeMode>
+        <coordinates>{first['lon']:.6f},{first['lat']:.6f},0</coordinates>
+      </Point></Placemark>
+    <Placemark><name>Landing</name><styleUrl>#land</styleUrl>
+      <Point><altitudeMode>clampToGround</altitudeMode>
+        <coordinates>{last['lon']:.6f},{last['lat']:.6f},0</coordinates>
+      </Point></Placemark>
+    <Placemark><name>Apogee ({int(apex['alt'])} m)</name><styleUrl>#apex</styleUrl>
+      <Point><altitudeMode>absolute</altitudeMode>
+        <coordinates>{apex['lon']:.6f},{apex['lat']:.6f},{apex['alt']:.1f}</coordinates>
+      </Point></Placemark>
+  </Document>
+</kml>"""
+
+async def _save_kml():
+    """Writes the current KML data to disk (called after every GPS-valid telemetry packet)."""
+    kml_str = _build_kml(state.kml_points, state.kml_max_alt)
+    if kml_str:
+        async with aiofiles.open(KML_CURRENT, "w", encoding="utf-8") as f:
+            await f.write(kml_str)
 ring: Deque[str] = deque(maxlen=10_000)   # Keeps the last 10,000 log messages in memory
 ws_clients: Set[WebSocket] = set()        # A list of all web browsers currently connected
 uplink_q: asyncio.Queue[str] = asyncio.Queue() # A queue (line) of commands waiting to be sent
@@ -425,6 +488,20 @@ async def handle_telemetry_line(raw: str):
     if state.csv_ready:
         async with aiofiles.open(CSV_CURRENT, "a", encoding="utf-8", newline="") as f:
             await f.write(clean_csv + "\r\n")
+
+    # 4b) Auto-save KML (Google Earth) — collect GPS points and write to disk
+    gps_lat = parsed_data.get("gps_lat", 0.0)
+    gps_lon = parsed_data.get("gps_lon", 0.0)
+    alt_m = parsed_data.get("altitude_m", 0.0)
+    if isinstance(gps_lat, (int, float)) and isinstance(gps_lon, (int, float)):
+        if gps_lat != 0.0 and gps_lon != 0.0:  # Only save valid GPS fixes
+            state.kml_points.append({"lat": gps_lat, "lon": gps_lon, "alt": max(0, alt_m)})
+            if alt_m > state.kml_max_alt:
+                state.kml_max_alt = alt_m
+            # Keep max 3000 points to cap memory
+            if len(state.kml_points) > 3000:
+                state.kml_points.pop(0)
+            await _save_kml()
 
     # 5) Update counters
     state.rx_count += 1
@@ -823,6 +900,19 @@ async def api_ingest(body: IngestBody):
         raise HTTPException(400, detail="empty")
     await handle_telemetry_line(line)
     return {"ok": True}
+
+# ---- KML download endpoint ----
+@app.get("/api/kml")
+async def api_kml_download():
+    """Download the auto-saved KML file (Google Earth flight path)."""
+    if KML_CURRENT.exists():
+        from fastapi.responses import FileResponse
+        return FileResponse(
+            path=str(KML_CURRENT),
+            media_type="application/vnd.google-earth.kml+xml",
+            filename=KML_CURRENT.name,
+        )
+    raise HTTPException(status_code=404, detail="No KML file yet — waiting for GPS data.")
 
 # ---- CSV folder open / save-now ----
 def _open_folder(path: Path):
