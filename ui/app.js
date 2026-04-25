@@ -62,6 +62,13 @@ if (!window.__DGS_BOOTED__) {
       // Pinned GPS target (user-defined landing zone)
       pinnedLat: null,
       pinnedLon: null,
+      // Calculated physics
+      speed: 0,
+      lastTeleTime: 0,
+      // Descent / Fall speed tracking
+      releaseAlt: null,
+      releaseTime: null,
+      csvRawMode: false,
     };
 
     // ---------- DOM ELEMENTS (Links to HTML items) ----------
@@ -102,6 +109,7 @@ if (!window.__DGS_BOOTED__) {
       send: $("#sendCmd"),
       // New buttons
       btnOpenCsvFolder: $("#btnOpenCsvFolder"),
+      btnCsvMode: $("#btnCsvMode"),
       btnSim: $("#btnSim"),
       btnExportKML: $("#btnExportKML"),
 
@@ -137,6 +145,12 @@ if (!window.__DGS_BOOTED__) {
       val_accel_x: $("#val_accel_x"),
       val_accel_y: $("#val_accel_y"),
       val_accel_z: $("#val_accel_z"),
+      val_speed: $("#val_speed"),
+      val_gforce: $("#val_gforce"),
+      fallSpeedBox: $("#fallSpeedBox"),
+      val_fall_speed: $("#val_fall_speed"),
+      val_battery_pct: $("#val_battery_pct"),
+      battery_bar: $("#battery_bar"),
 
       // Chart Toggles
       altitudeToggles: $("#altitudeToggles"),
@@ -449,6 +463,29 @@ if (!window.__DGS_BOOTED__) {
 
     // ── KML export (Google Earth 3D flight path) ──────────────────────
     // Triggered automatically when the CanSat LANDS, or manually via button.
+    
+    el.btnCsvMode?.addEventListener('click', async () => {
+      const newMode = !st.csvRawMode;
+      try {
+        const res = await fetch('/api/csv/mode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ raw: newMode })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          st.csvRawMode = data.raw;
+          if (el.btnCsvMode) {
+            el.btnCsvMode.textContent = st.csvRawMode ? 'CSV: RAW' : 'CSV: CLEAN';
+            el.btnCsvMode.className = st.csvRawMode ? 'btn sm danger' : 'btn sm ghost';
+          }
+          info(`CSV Save Mode: ${st.csvRawMode ? 'RAW (Saving all payload output)' : 'CLEAN (Using config filter)'}`);
+        }
+      } catch (e) {
+        err("Failed to change CSV mode.");
+      }
+    });
+
     el.btnExportKML?.addEventListener('click', () => {
       st.kmlExported = false; // Allow manual re-export
       generateKML();
@@ -546,7 +583,21 @@ if (!window.__DGS_BOOTED__) {
           axisLabel: { show: true, color: gridColor, fontSize: 11 },
           splitLine: { show: true, lineStyle: { color: gridColor, opacity: 0.25 } } // Vertical grid lines
         },
-        yAxis: {
+        yAxis: names.includes('Batt %') ? [
+          {
+            type: 'value',
+            scale: true,
+            axisLabel: { color: gridColor, fontSize: 11 },
+            splitLine: { lineStyle: { color: gridColor, opacity: 0.25 } }
+          },
+          {
+            type: 'value',
+            max: 100,
+            min: 0,
+            axisLabel: { show: false },
+            splitLine: { show: false }
+          }
+        ] : {
           type: 'value',
           scale: true,
           axisLabel: { color: gridColor, fontSize: 11 },
@@ -558,6 +609,7 @@ if (!window.__DGS_BOOTED__) {
           name: n,
           smooth: smooth,
           stack: stack,
+          yAxisIndex: n === 'Batt %' ? 1 : 0,
           areaStyle: (area && i === 0) ? { opacity: 0.15 } : undefined,
           showSymbol: true, // Show dots
           symbolSize: 8,    // Size of the dots
@@ -616,7 +668,7 @@ if (!window.__DGS_BOOTED__) {
       // Altitude: Smooth + Area fill
       st.charts.altitude = makeMulti('chart-altitude', ['Altitude'], { smooth: true, area: true });
       // Power: Smooth, Dual Axis (Voltage left, Current right)
-      st.charts.power = makeMulti('chart-power', ['Voltage', 'Current'], { smooth: true });
+      st.charts.power = makeMulti('chart-power', ['Voltage', 'Current', 'Batt %'], { smooth: true });
       // Accel: Stacked
       st.charts.accel = makeMulti('chart-accel', ['Acc X', 'Acc Y', 'Acc Z'], { stack: 'Total' });
       // Gyro: Stacked
@@ -663,6 +715,27 @@ if (!window.__DGS_BOOTED__) {
           }
         }
         st.lastSpokenState = t.state;
+        
+        // Setup Avg Fall Speed Box if we enter Descent phase
+        if (t.state === 'DESCENT' || t.state === 'PAYLOAD_RELEASE') {
+          st.releaseAlt = typeof t.altitude_m === 'number' ? t.altitude_m : 0;
+          st.releaseTime = Date.now();
+          if (el.fallSpeedBox) el.fallSpeedBox.style.display = 'flex';
+        } else if (t.state === 'LAUNCH_PAD') {
+          st.releaseAlt = null;
+          st.releaseTime = null;
+          if (el.fallSpeedBox) el.fallSpeedBox.style.display = 'none';
+        }
+      }
+
+      // Calculate avg fall speed during descent
+      if (st.releaseAlt !== null && st.releaseTime !== null) {
+          const dt = (Date.now() - st.releaseTime) / 1000;
+          if (dt > 1 && typeof t.altitude_m === 'number') {
+              const dist = st.releaseAlt - t.altitude_m;
+              const avgFallSpeed = dist / dt;
+              if (el.val_fall_speed) el.val_fall_speed.textContent = `${num(avgFallSpeed, 2)} m/s`;
+          }
       }
 
       // 1. Update Big Text Displays
@@ -677,7 +750,24 @@ if (!window.__DGS_BOOTED__) {
       // 3. Update Key Value Grid
       el.val_temp && (el.val_temp.textContent = `${num(t.temperature_c, 1)} °C`);
       el.val_pressure && (el.val_pressure.textContent = `${num(t.pressure_kpa, 2)} kPa`);
-      el.val_voltage && (el.val_voltage.textContent = `${num(t.voltage_v, 2)} V`);
+      
+      const voltage = t.voltage_v || 0;
+      el.val_voltage && (el.val_voltage.textContent = `${num(voltage, 2)} V`);
+      
+      // Calculate 2S Li-ion percentage (Max 8.4V, Min 6.0V)
+      let pct = 0;
+      if (voltage >= 8.4) pct = 100;
+      else if (voltage <= 6.0) pct = 0;
+      else pct = ((voltage - 6.0) / 2.4) * 100;
+      
+      if (el.val_battery_pct) {
+          el.val_battery_pct.textContent = `${num(pct, 0)}%`;
+          if (pct > 50) { el.val_battery_pct.style.color = getCssVar('--ok'); el.battery_bar.style.background = getCssVar('--ok'); }
+          else if (pct > 20) { el.val_battery_pct.style.color = getCssVar('--warn'); el.battery_bar.style.background = getCssVar('--warn'); }
+          else { el.val_battery_pct.style.color = getCssVar('--err'); el.battery_bar.style.background = getCssVar('--err'); }
+      }
+      if (el.battery_bar) el.battery_bar.style.width = `${pct}%`;
+
       el.val_current && (el.val_current.textContent = `${num(t.current_a, 3)} A`);
 
       el.val_gyro_x && (el.val_gyro_x.textContent = num(t.gyro_r_dps, 2));
@@ -688,6 +778,30 @@ if (!window.__DGS_BOOTED__) {
       el.val_accel_y && (el.val_accel_y.textContent = num(t.accel_p_dps2, 2));
       el.val_accel_z && (el.val_accel_z.textContent = num(t.accel_y_dps2, 2));
 
+      // Calculate G Force and Speed
+      const accel_mag = Math.sqrt(
+        (t.accel_r_dps2 || 0)**2 + 
+        (t.accel_p_dps2 || 0)**2 + 
+        (t.accel_y_dps2 || 0)**2
+      );
+      const g_force = accel_mag / 9.80665;
+      el.val_gforce && (el.val_gforce.textContent = `${num(g_force, 2)} G`);
+
+      const now = Date.now();
+      if (st.lastTeleTime) {
+         const dt = (now - st.lastTeleTime) / 1000;
+         const net_accel = accel_mag - 9.80665;
+         
+         if (Math.abs(net_accel) > 0.15) {
+             st.speed += net_accel * dt;
+         }
+         
+         if (st.speed < 0 || t.state === 'LANDED' || t.state === 'LAUNCH_PAD') {
+             st.speed = 0;
+         }
+      }
+      st.lastTeleTime = now;
+      el.val_speed && (el.val_speed.textContent = `${num(st.speed, 2)} m/s`);
 
       // 4. Update Packet Counters
       el.rxCount && (el.rxCount.textContent = t.gs_rx_count);
@@ -711,7 +825,7 @@ if (!window.__DGS_BOOTED__) {
       // [REQ-69] Plot altitude, battery voltage, current, accelerometer, rotation rates in real time
       const label = t.mission_time || hms();
       pushChart(st.charts.altitude, label, [t.altitude_m]);
-      pushChart(st.charts.power, label, [t.voltage_v, t.current_a]);
+      pushChart(st.charts.power, label, [t.voltage_v, t.current_a, pct]);
       pushChart(st.charts.accel, label, [t.accel_r_dps2, t.accel_p_dps2, t.accel_y_dps2]);
       pushChart(st.charts.gyro, label, [t.gyro_r_dps, t.gyro_p_dps, t.gyro_y_dps]);
 
