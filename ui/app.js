@@ -656,8 +656,8 @@ if (!window.__DGS_BOOTED__) {
     function initCharts() {
       // Altitude: Smooth + Area fill
       st.charts.altitude = makeMulti('chart-altitude', ['Altitude'], { smooth: true, area: true });
-      // Power: Smooth, Dual Axis (Voltage left, Current right)
-      st.charts.power = makeMulti('chart-power', ['Voltage', 'Current', 'Batt %'], { smooth: true });
+      // Power: Smooth
+      st.charts.power = makeMulti('chart-power', ['Voltage', 'Current'], { smooth: true });
       // Accel: Stacked
       st.charts.accel = makeMulti('chart-accel', ['Acc X', 'Acc Y', 'Acc Z'], { stack: 'Total' });
       // Gyro: Stacked
@@ -814,7 +814,7 @@ if (!window.__DGS_BOOTED__) {
       // [REQ-69] Plot altitude, battery voltage, current, accelerometer, rotation rates in real time
       const label = t.mission_time || hms();
       pushChart(st.charts.altitude, label, [t.altitude_m]);
-      pushChart(st.charts.power, label, [t.voltage_v, t.current_a, pct]);
+      pushChart(st.charts.power, label, [t.voltage_v, t.current_a]);
       pushChart(st.charts.accel, label, [t.accel_r_dps2, t.accel_p_dps2, t.accel_y_dps2]);
       pushChart(st.charts.gyro, label, [t.gyro_r_dps, t.gyro_p_dps, t.gyro_y_dps]);
 
@@ -919,6 +919,9 @@ if (!window.__DGS_BOOTED__) {
     const QUICK_COMMANDS = [
       // Telemetry
       'CX,ON', 'CX,OFF',
+      // State Overrides
+      'STATE,IDLE_SAFE', 'STATE,LAUNCH_PAD', 'STATE,ASCENT', 'STATE,APOGEE',
+      'STATE,DESCENT', 'STATE,PROBE_REALEASE', 'STATE,PAYLOAD_REALEASE', 'STATE,LANDED',
       // Calibration & Reset
       'CAL', 'RESET', 'CAL,MAG,START', 'CAL,NORTH', 'CAL,MAG,STATUS', 'CAL,MAG,RESET',
       // Simulation
