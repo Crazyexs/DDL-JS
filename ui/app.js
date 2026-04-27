@@ -68,7 +68,6 @@ if (!window.__DGS_BOOTED__) {
       // Descent / Fall speed tracking
       releaseAlt: null,
       releaseTime: null,    // satellite mission_time seconds when descent started
-      csvRawMode: false,
       // Resilience
       isReplaying: false,       // suppress audio/logs during ring-buffer replay
       reconnectDelay: 2000,     // current backoff delay (ms); grows on repeated failures
@@ -114,9 +113,9 @@ if (!window.__DGS_BOOTED__) {
       send: $("#sendCmd"),
       // New buttons
       btnOpenCsvFolder: $("#btnOpenCsvFolder"),
+      activeLogLabel: $("#activeLogLabel"),
       btnSim: $("#btnSim"),
       btnExportKML: $("#btnExportKML"),
-      logBadge: $("#logBadge"),
 
       // Pin GPS target
       btnPinGps: $("#btnPinGps"),
@@ -843,17 +842,17 @@ if (!window.__DGS_BOOTED__) {
       }
 
       // 8. Update 3D Cesium Map & KML Export
-      if (t.gps_lat && t.gps_lon && typeof t.gps_lat === 'number' && typeof t.gps_lon === 'number') {
+      if (typeof t.gps_lat === 'number' && typeof t.gps_lon === 'number' && (t.gps_lat !== 0 || t.gps_lon !== 0)) {
         const lat = t.gps_lat, lon = t.gps_lon;
         const alt = typeof t.altitude_m === 'number' ? Math.max(0, t.altitude_m) : 0;
         
         // Update UI text regardless of satellite count
-        el.gpsMini && (el.gpsMini.textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)} • sats: ${t.gps_sats ?? '—'}`);
+        el.gpsMini && (el.gpsMini.textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)} \u2022 sats: ${t.gps_sats ?? '\u2014'}`);
         el.gmapA && (el.gmapA.href = `https://maps.google.com/?q=${lat},${lon}`);
 
         // Only plot coordinates when we have a solid GPS 3D fix (> 3 sats)
         if (Number(t.gps_sats) > 3) {
-          // Always update the position state — map will snap here when live data arrives
+          // Always update the position state \u2014 map will snap here when live data arrives
           st.gps_lat = lat;
           st.gps_lon = lon;
           st.lastCesiumAlt = alt;
@@ -895,12 +894,12 @@ if (!window.__DGS_BOOTED__) {
             if (st.recoveryMarker) st.recoveryMarker.setLatLng([lat, lon]);
           }
 
-          // Update pinned GPS distance (cheap text update — always run)
+          // Update pinned GPS distance (cheap text update \u2014 always run)
           updatePinnedDist();
         }
       }
 
-      // 9. Update Text Log (bottom right box) — suppressed during replay to avoid flooding
+      // 9. Update Text Log (bottom right box) \u2014 suppressed during replay to avoid flooding
       if (!st.isReplaying) {
         try {
           const showRaw = el.showRaw?.checked;
@@ -940,12 +939,17 @@ if (!window.__DGS_BOOTED__) {
       const mo = new MutationObserver(() => { if (el.auto?.checked) el.rawBox.scrollTop = el.rawBox.scrollHeight; update(); });
       mo.observe(el.rawBox, { childList: true, subtree: false });
     })();
+    el.wrap?.addEventListener('change', () => {
+      el.rawBox?.classList.toggle('wrap', el.wrap.checked);
+    });
     el.refreshLogs?.addEventListener('click', () => { if (!el.rawBox) return; el.rawBox.innerHTML = ''; info('Log view cleared.'); });
     el.copyLogs?.addEventListener('click', async () => { if (!el.rawBox) return; await navigator.clipboard.writeText([...(el.rawBox.querySelectorAll('.logline'))].map(n => n.innerText).join('\n')); cmdEcho('Logs copied to clipboard.'); });
     el.resetAll?.addEventListener('click', () => { if (el.rawBox) el.rawBox.innerHTML = ''; Object.values(st.charts).forEach(c => c?.clear()); initCharts(); cmdEcho('UI Reset.'); });
 
     // ---------- COMMANDS (Sending data to satellite) ----------
     const QUICK_COMMANDS = [
+      // Log sessions
+      '/log default',
       // Telemetry
       'CX,ON', 'CX,OFF',
       // State Overrides
@@ -955,13 +959,13 @@ if (!window.__DGS_BOOTED__) {
       'CAL', 'RESET', 'CAL,MAG,START', 'CAL,NORTH', 'CAL,MAG,STATUS', 'CAL,MAG,RESET',
       // Simulation
       'SIM,ENABLE', 'SIM,ACTIVATE', 'SIM,DISABLE',
-      // Mechanical — Payload release servo
+      // Mechanical \u2014 Payload release servo
       'MEC,PL,ON', 'MEC,PL,OFF',
-      // Mechanical — Instrument bay servo
+      // Mechanical \u2014 Instrument bay servo
       'MEC,INS,ON', 'MEC,INS,OFF',
-      // Mechanical — Parachute spin motor
+      // Mechanical \u2014 Parachute spin motor
       'MEC,PAR,CW', 'MEC,PAR,ACW', 'MEC,PAR,OFF',
-      // Log switching (local GCS only — not sent to satellite)
+      // Log switching (local GCS only \u2014 not sent to satellite)
       '/log.clear',
       // Dummy data
       '/dummy.on', '/dummy.off',
@@ -973,20 +977,20 @@ if (!window.__DGS_BOOTED__) {
       { prefix: 'SIMP,',           label: 'SIMP,<pressure>',          hint: 'Enter simulated pressure (Pa):' },
       { prefix: 'SET,MAIN_ALT,',   label: 'SET,MAIN_ALT,<alt_m>',     hint: 'Enter main chute deployment altitude (m):' },
       { prefix: 'SET,APOGEE_ALT,', label: 'SET,APOGEE_ALT,<alt_m>',   hint: 'Enter apogee altitude threshold (m):' },
-      { prefix: 'SET,TX_RATE,',    label: 'SET,TX_RATE,<1-10>',       hint: 'Enter telemetry TX rate (1–10 Hz):' },
+      { prefix: 'SET,TX_RATE,',    label: 'SET,TX_RATE,<1-10>',       hint: 'Enter telemetry TX rate (1\u201310 Hz):' },
       { prefix: 'SET,INS_TOF,',    label: 'SET,INS_TOF,<val>',       hint: 'Enter instrument ToF threshold (m):' },
       { prefix: 'SET,INS_NEAR,',   label: 'SET,INS_NEAR,<val>',      hint: 'Enter instrument near threshold (m):' },
       { prefix: 'SET,INS_CRIT,',   label: 'SET,INS_CRIT,<val>',      hint: 'Enter instrument critical threshold (m):' },
       { prefix: 'CAL,TOF,',        label: 'CAL,TOF,<dist_mm>',       hint: 'Enter VL53L1X calibration distance (mm):' },
-      { prefix: 'SERVO,A,',        label: 'SERVO,A,<0-180>',          hint: 'Enter servo A angle (0–180):' },
-      { prefix: 'SERVO,B,',        label: 'SERVO,B,<0-180>',          hint: 'Enter servo B angle (0–180):' },
+      { prefix: 'SERVO,A,',        label: 'SERVO,A,<0-180>',          hint: 'Enter servo A angle (0\u2013180):' },
+      { prefix: 'SERVO,B,',        label: 'SERVO,B,<0-180>',          hint: 'Enter servo B angle (0\u2013180):' },
     ];
 
     // Populates the dropdown menu
     function fillCmds() {
       if (!el.quick) return;
       el.quick.innerHTML = '';
-      const opt0 = document.createElement('option'); opt0.value = ''; opt0.textContent = '— Quick Command —';
+      const opt0 = document.createElement('option'); opt0.value = ''; opt0.textContent = '\u2014 Quick Command \u2014';
       el.quick.append(opt0);
       QUICK_COMMANDS.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; el.quick.append(o); });
       PARAM_COMMANDS.forEach(p => { const o = document.createElement('option'); o.value = '__param__' + p.prefix; o.textContent = p.label; el.quick.append(o); });
@@ -1001,7 +1005,7 @@ if (!window.__DGS_BOOTED__) {
       if (cmd.startsWith('/')) {
         const command = cmd.toLowerCase();
 
-        // /log <name>  →  switch active log file on the backend
+        // /log <name>  \u2192  switch active log file on the backend
         if (command.startsWith('/log ') || command === '/log.clear') {
           const label = command === '/log.clear' ? '' : cmd.slice(5).trim();
           fetch('/api/log/set', {
@@ -1011,7 +1015,11 @@ if (!window.__DGS_BOOTED__) {
           })
             .then(r => r.json())
             .then(d => {
-              if (d.ok) info(`Log switched → ${d.file}`);
+              if (d.ok) {
+                const display = d.label || 'default';
+                if (el.activeLogLabel) el.activeLogLabel.textContent = display;
+                info(`Log switched \u2192 ${d.file}`);
+              }
               else err(`Log switch failed: ${JSON.stringify(d)}`);
             })
             .catch(e => err(`Log switch error: ${e.message}`));
@@ -1046,7 +1054,7 @@ if (!window.__DGS_BOOTED__) {
           const errBody = await res.text();
           throw new Error(`HTTP ${res.status}: ${errBody}`);
         }
-        // If successful, we just wait. The satellite will echo the command back later if it got it.
+        # If successful, we just wait. The satellite will echo the command back later if it got it.
       } catch (e) {
         err(`Command failed: ${e.message}`);
       }
@@ -1091,7 +1099,7 @@ if (!window.__DGS_BOOTED__) {
         }
         st.isReplaying = false;
 
-        if (replayed > 0) info(`↩ Restored ${replayed} packets from server history.`);
+        if (replayed > 0) info(`\u21a9 Restored ${replayed} packets from server history.`);
       } catch (e) {
         st.isReplaying = false;
         warn(`History restore failed: ${e.message}`);
@@ -1105,7 +1113,7 @@ if (!window.__DGS_BOOTED__) {
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const url = `${protocol}//${window.location.host}/ws/telemetry`;
-      info(`Connecting to ${url}…`);
+      info(`Connecting to ${url}\u2026`);
       st.ws = new WebSocket(url);
 
       st.ws.onopen = () => {
@@ -1125,8 +1133,8 @@ if (!window.__DGS_BOOTED__) {
             err(data.message || 'Received an unknown error from backend.');
           } else if (data.type === 'log_switched') {
             const label = data.label || 'default';
-            if (el.logBadge) el.logBadge.textContent = `LOG: ${label}`;
-            cmdEcho(`Log → ${data.file}`);
+            if (el.activeLogLabel) el.activeLogLabel.textContent = label;
+            cmdEcho(`Log \u2192 ${data.file}`);
             speak(`Log switched to ${label}.`);
           } else if (data.type !== 'ping') {
             onTelemetry(data); // Process the data!
@@ -1138,10 +1146,10 @@ if (!window.__DGS_BOOTED__) {
 
       st.ws.onclose = () => {
         st.ws = null;
-        // Exponential backoff: 2 → 3 → 4.5 → … capped at 30 s
+        # Exponential backoff: 2 \u2192 3 \u2192 4.5 \u2192 \u2026 capped at 30 s
         const delay = st.reconnectDelay;
         st.reconnectDelay = Math.min(Math.round(st.reconnectDelay * 1.5), 30000);
-        err(`Backend disconnected. Retrying in ${(delay / 1000).toFixed(0)} s…`);
+        err(`Backend disconnected. Retrying in ${(delay / 1000).toFixed(0)} s\u2026`);
         setPill(false, `Retry in ${(delay / 1000).toFixed(0)} s`);
         clearTimeout(st.reconnectTimer);
         st.reconnectTimer = setTimeout(connect, delay);
@@ -1158,7 +1166,7 @@ if (!window.__DGS_BOOTED__) {
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden && (!st.ws || st.ws.readyState !== WebSocket.OPEN)) {
         clearTimeout(st.reconnectTimer);
-        st.reconnectDelay = 2000; // reset backoff — user is actively back
+        st.reconnectDelay = 2000; // reset backoff \u2014 user is actively back
         connect();
       }
     });
@@ -1241,7 +1249,7 @@ if (!window.__DGS_BOOTED__) {
           const hdg = calcHeading(uLat, uLon, livePayload[0], livePayload[1]);
 
           el.recovDist.textContent = `${Math.round(dist)} m`;
-          el.recovHeading.textContent = `${Math.round(hdg)}°`;
+          el.recovHeading.textContent = `${Math.round(hdg)}\u00b0`;
 
           if (st.voiceNavEnabled && dist > 5) {
             const now = Date.now();
@@ -1271,7 +1279,7 @@ if (!window.__DGS_BOOTED__) {
     function updatePinnedDist() {
       if (!el.pinnedDistDisplay) return;
       if (st.pinnedLat === null || st.pinnedLon === null || !st.gps_lat || !st.gps_lon) {
-        el.pinnedDistDisplay.textContent = '—';
+        el.pinnedDistDisplay.textContent = '\u2014';
         return;
       }
       const d = calcDistance(st.gps_lat, st.gps_lon, st.pinnedLat, st.pinnedLon);
@@ -1332,12 +1340,13 @@ if (!window.__DGS_BOOTED__) {
       }
     }
 
-    async function syncLogBadge() {
+    async function syncLogLabel() {
       try {
-        const r = await fetch('/api/log/current');
-        if (r.ok) {
-          const d = await r.json();
-          if (el.logBadge) el.logBadge.textContent = `LOG: ${d.label}`;
+        const res = await fetch('/api/log/current');
+        if (res.ok) {
+          const data = await res.json();
+          const display = data.label || 'default';
+          if (el.activeLogLabel) el.activeLogLabel.textContent = display;
         }
       } catch (_) {}
     }
@@ -1346,7 +1355,7 @@ if (!window.__DGS_BOOTED__) {
       initMap();
       fillCmds();
       initTheme();
-      syncLogBadge();
+      syncLogLabel();
 
       // Announce startup health
       const setupSpeech = async () => {
@@ -1363,7 +1372,7 @@ if (!window.__DGS_BOOTED__) {
           document.body.addEventListener('touchstart', onFirstClick);
         }
       };
-      // Run immediately instead of waiting 1000ms
+      # Run immediately instead of waiting 1000ms
       setupSpeech();
 
       // [REQ-77] All data shall be shown simultaneously in the ground station GUI (Tabs not allowed)

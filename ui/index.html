@@ -78,14 +78,14 @@
       <button id="btnPinGps" class="btn sm ghost" title="Paste a GPS coordinate to track distance from payload">Pin GPS Target</button>
       <div style="display:flex; align-items:center; gap:6px;">
         <span class="k" style="font-size:11px;">Dist to Pin:</span>
-        <span id="pinnedDistDisplay" class="v" style="font-size:16px; font-weight:700; color:var(--accent);">—</span>
+        <span id="pinnedDistDisplay" class="v" style="font-size:16px; font-weight:700; color:var(--accent);">\u2014</span>
       </div>
     </div>
     <div class="compass-container">
       <div class="compass">
         <div class="compass-arrow" id="compassArrow"></div>
       </div>
-      <div class="heading-text" id="heading">--°</div>
+      <div class="heading-text" id="heading">--\u00b0</div>
     </div>
     <div class="kv-major">
       <div class="k">RX Packets</div>
@@ -95,11 +95,15 @@
       <div class="k">Lost Packets</div>
       <div id="lossCount" class="v">0</div>
     </div>
-    <div class="group">
-      <button id="btnOpenCsvFolder" class="btn sm">Log Folder</button>
-
-      <button id="btnSim" class="btn sm">Run Sim</button>
-      <button id="btnExportKML" class="btn sm primary">Export KML</button>
+    <div class="group" style="flex-direction:column;align-items:flex-start;gap:3px;">
+      <div style="display:flex;gap:4px;align-items:center;">
+        <button id="btnOpenCsvFolder" class="btn sm">Log Folder</button>
+        <button id="btnSim" class="btn sm">Run Sim</button>
+        <button id="btnExportKML" class="btn sm primary">Export KML</button>
+      </div>
+      <div style="font-size:10px;color:var(--muted);padding:0 2px;">
+        Log: <span id="activeLogLabel" style="color:var(--ok);font-family:ui-monospace,monospace;font-weight:700;">Flight_1043.csv</span>
+      </div>
     </div>
   </section>
 
@@ -108,7 +112,7 @@
     <!-- MAP (Right Column, Top) -->
     <section class="panel map-panel">
       <div class="panel-title">
-        <div>GPS LOCATION <span id="gpsMiniTitle" class="gpsmini">—, — • sats: —</span></div>
+        <div>GPS LOCATION <span id="gpsMiniTitle" class="gpsmini">\u2014, \u2014 \u2022 sats: \u2014</span></div>
         <div class="missionbar">
           <button id="btnStartMission" class="btn primary sm">Start Mission</button>
           <button id="toggleMapSize" class="btn sm ghost" title="Switch between 3D and 2D map">Map Toggle</button>
@@ -136,11 +140,11 @@
           <div id="chart-power"></div>
         </div>
         <div class="chartbox">
-          <div class="charttitle">Acceleration (m/s²)</div>
+          <div class="charttitle">Acceleration (m/s\u00b2)</div>
           <div id="chart-accel"></div>
         </div>
         <div class="chartbox">
-          <div class="charttitle">Gyroscope (°/s)</div>
+          <div class="charttitle">Gyroscope (\u00b0/s)</div>
           <div id="chart-gyro"></div>
         </div>
       </div>
@@ -152,7 +156,7 @@
       <div class="values-grid">
         <div class="kv-cell">
           <div class="k">Temperature</div>
-          <div id="val_temp" class="v">-- °C</div>
+          <div id="val_temp" class="v">-- \u00b0C</div>
         </div>
         <div class="kv-cell">
           <div class="k">Pressure</div>
@@ -193,7 +197,7 @@
         </div>
 
         <div class="kv-group">
-          <div class="k">Accel (m/s²)</div>
+          <div class="k">Accel (m/s\u00b2)</div>
           <div class="v-group">
             <span>X: <b id="val_accel_x">--</b></span>
             <span>Y: <b id="val_accel_y">--</b></span>
@@ -208,17 +212,10 @@
       <div class="panel-title">
         <div style="display:flex;align-items:center;gap:8px;">
           Telemetry Control &amp; Logs
-          <span id="logBadge" style="
-            font-size:11px; font-weight:700; font-family:ui-monospace,monospace;
-            padding:2px 7px; border-radius:999px;
-            background:color-mix(in oklab,var(--ok) 14%,transparent 86%);
-            color:color-mix(in oklab,var(--ok) 75%,black 25%);
-            border:1px solid color-mix(in oklab,var(--ok) 35%,var(--edge) 65%);
-          ">LOG: default</span>
         </div>
         <div class="lastcmd">
           <div class="tit">Last Cmd</div>
-          <div id="lastCmd" class="val">—</div>
+          <div id="lastCmd" class="val">\u2014</div>
         </div>
       </div>
       <div class="logs-content">
@@ -235,6 +232,7 @@
             <label class="chk"><input type="checkbox" id="autoScroll" checked> Auto</label>
             <label class="chk"><input type="checkbox" id="showRaw"> Raw</label>
             <label class="chk"><input type="checkbox" id="freeze"> Freeze</label>
+            <label class="chk"><input type="checkbox" id="wrapLines"> Wrap</label>
           </div>
           <div class="right" style="display:flex;gap:8px;align-items:center">
             <button id="copyLogs" class="btn sm">Copy Log</button>
@@ -269,7 +267,7 @@
       </div>
       <div class="kv-major-large" style="flex: 1; border-left: 2px solid var(--edge);">
         <div class="k">Walk Heading</div>
-        <div id="recovHeading" class="v" style="font-size: 54px; color: var(--accent);">-- °</div>
+        <div id="recovHeading" class="v" style="font-size: 54px; color: var(--accent);">-- \u00b0</div>
       </div>
     </div>
 
@@ -278,7 +276,7 @@
     </div>
   </div>
 
-  <!-- sync small→big time -->
+  <!-- sync small\u2192big time -->
   <script>
     (function () {
       const s = document.getElementById('missionTime'), b = document.getElementById('missionTimeBig');

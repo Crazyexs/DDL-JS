@@ -38,7 +38,7 @@ TEAM_ID = 1043
 # This is the default USB port the computer uses to talk to the radio.
 # On Windows it is usually "COM3", "COM4", etc.
 # On Linux/Mac it looks like "/dev/ttyUSB0".
-DEFAULT_PORT = "/dev/cu.usbserial-A50285BI"
+DEFAULT_PORT = "/dev/cu.usbserial-00000000"
 
 # This is the speed of the connection. Both the radio and computer must match this number.
 DEFAULT_BAUD = 115200
@@ -323,6 +323,7 @@ async def _save_kml():
 ring: Deque[str] = deque(maxlen=10_000)   # Keeps the last 10,000 log messages in memory
 ws_clients: Set[WebSocket] = set()        # A list of all web browsers currently connected
 uplink_q: asyncio.Queue[str] = asyncio.Queue() # A queue (line) of commands waiting to be sent
+_kml_gps_count: int = 0                   # Count valid GPS packets; write KML every 10
 
 _serial_transport = None
 _serial_writer_lock = asyncio.Lock()
@@ -515,56 +516,32 @@ async def handle_telemetry_line(raw: str):
         ring.append(json.dumps({"bad_line": raw}))
         # Save unexpected lines so we don't lose them
         if state.csv_ready:
-            async with aiofiles.open(CSV_CURRENT, "a", encoding="utf-8", newline="") as f:
+            async with aiofiles.open(get_active_csv(), "a", encoding="utf-8", newline="") as f:
                 await f.write(raw + "\r\n")
         return
 
-    # 1) Parse data dynamically using the config
-    parsed_data = {}     # Holds the values for the Telemetry object (e.g., altitude_m=50.2)
-    clean_parts = []     # Holds the clean strings for the CSV file
-    
-    # Loop through every column defined in telemetry_config.json
+    # 1) Parse data dynamically using the config (for UI display only; CSV is saved as raw)
+    parsed_data = {}
+
     for i, cfg in enumerate(TELEMETRY_CONFIG):
-        key = cfg.get("internal_key") # e.g., "altitude_m"
-        dtype = cfg.get("type")       # e.g., "float"
-        
-        # Get the raw string value from the CSV line
-        val_str = parts[i] if i < len(parts) else ""
-        val_str = val_str.strip()
-        
-        # Convert the string to the correct type (int/float/str)
-        value = None
-        clean_str = val_str # Default for string types
-        
+        key = cfg.get("internal_key")
+        dtype = cfg.get("type")
+        val_str = (parts[i] if i < len(parts) else "").strip()
+
         try:
             if dtype == "int":
                 value = int(val_str) if val_str else 0
-                clean_str = str(value)
             elif dtype == "float":
                 value = float(val_str) if val_str else 0.0
-                # Format floats nicely for the CSV file (2 decimal places usually)
-                if key and ("lat" in key or "lon" in key): 
-                    clean_str = f"{value:.5f}" # GPS needs more precision
-                elif key and "pressure" in key:
-                    clean_str = f"{value:.3f}"
-                else:
-                    clean_str = f"{value:.2f}"
-            else: # string
+            else:
                 value = val_str
-                clean_str = val_str
         except ValueError:
-            # If conversion fails (e.g. text in a number field), use defaults
             if dtype == "int": value = 0
             elif dtype == "float": value = 0.0
             else: value = ""
-            clean_str = str(value)
 
-        # Save to our parsed data dictionary (if it maps to a Telemetry field)
         if key:
             parsed_data[key] = value
-            
-        # Add to the clean CSV list
-        clean_parts.append(clean_str)
 
     # 2) Create the Telemetry object
     # We add the Ground Station calculated fields here
@@ -576,13 +553,11 @@ async def handle_telemetry_line(raw: str):
     # This '**parsed_data' magic passes the dictionary as arguments
     tel = Telemetry(**parsed_data)
 
-    # 3) Reconstruct the CLEAN CSV line (we don't save this anymore, we save RAW)
-    clean_csv = ",".join(clean_parts)
-
     # 4) Append to the CSV file (ALWAYS SAVE RAW EXACTLY AS RECEIVED)
     if state.csv_ready:
         async with aiofiles.open(get_active_csv(), "a", encoding="utf-8", newline="") as f:
             await f.write(raw + "\r\n")
+
 
     # 4b) Auto-save KML (Google Earth) — collect GPS points and write to disk
     gps_lat = parsed_data.get("gps_lat", 0.0)
@@ -591,6 +566,7 @@ async def handle_telemetry_line(raw: str):
     alt_m = parsed_data.get("altitude_m", 0.0)
     if isinstance(gps_lat, (int, float)) and isinstance(gps_lon, (int, float)):
         if gps_lat != 0.0 and gps_lon != 0.0 and gps_sats > 5:  # Only save with good GPS fix (>5 sats)
+            global _kml_gps_count
             state.kml_points.append({
                 "lat": gps_lat, 
                 "lon": gps_lon, 
@@ -599,8 +575,9 @@ async def handle_telemetry_line(raw: str):
             })
             if alt_m > state.kml_max_alt:
                 state.kml_max_alt = alt_m
-            # deque(maxlen=3000) auto-evicts oldest — save on every good GPS fix (sats > 5)
-            await _save_kml()
+            _kml_gps_count += 1
+            if _kml_gps_count % 10 == 0:  # write KML to disk every 10 valid GPS packets
+                await _save_kml()
 
     # 5) Update counters
     state.rx_count += 1
@@ -616,7 +593,6 @@ async def handle_telemetry_line(raw: str):
 
     # 6) Send to UI
     payload = tel.model_dump()
-    payload['gs_raw_line'] = raw
     await broadcast_ws(payload)
     ring.append(json.dumps({"telemetry": payload}))
 
@@ -735,17 +711,17 @@ def generate_dummy_telemetry_line() -> str:
     mission_time = hms_from_seconds(pkt)
     
     # Determine flight state based on altitude
-    state = 'LAUNCH_PAD'
+    flight_state = 'LAUNCH_PAD'
     if dummy_state.get("has_landed", False) or altitude <= 0.5:
-        state = 'LANDED'
+        flight_state = 'LANDED'
         dummy_state["has_landed"] = True
     elif altitude > 20:
         if altitude > dummy_state["last_alt"]:
-            state = 'ASCENT'
+            flight_state = 'ASCENT'
         else:
-            state = 'DESCENT'
+            flight_state = 'DESCENT'
     elif dummy_state["last_alt"] > 20 and altitude <= 20:
-        state = 'LANDED'
+        flight_state = 'LANDED'
         dummy_state["has_landed"] = True
 
     dummy_state["last_alt"] = altitude
@@ -756,7 +732,7 @@ def generate_dummy_telemetry_line() -> str:
         "mission_time": mission_time,
         "packet_count": str(pkt),
         "mode": 'F',
-        "state": state,
+        "state": flight_state,
         "altitude_m": f"{altitude:.2f}",
         "temperature_c": f"{temp:.2f}",
         "pressure_kpa": f"{101.325 * math.pow(1 - 2.25577e-5 * altitude, 5.25588):.3f}",
@@ -987,7 +963,7 @@ async def api_sim_start(file: Optional[str] = None):
     sim_task = asyncio.create_task(sim_sender(path))
     return {"ok": True, "running": True, "file": str(path)}
 
-# ---- Browser → Server telemetry ingest ----
+# ---- Browser \u2192 Server telemetry ingest ----
 @app.post("/api/ingest")
 async def api_ingest(body: IngestBody):
     """Allows the browser to send data to the backend (used for WebSerial)."""
@@ -1053,7 +1029,7 @@ async def api_kml_download():
             media_type="application/vnd.google-earth.kml+xml",
             filename=kml_path.name,
         )
-    raise HTTPException(status_code=404, detail="No KML file yet — waiting for GPS data.")
+    raise HTTPException(status_code=404, detail="No KML file yet \u2014 waiting for GPS data.")
 
 # ---- CSV folder open / save-now ----
 def _open_folder(path: Path):
@@ -1104,8 +1080,9 @@ async def api_csv_save_now(payload: dict = Body(...)):
         out_path = DATA_DIR / f"Flight_{team_id}({i}).csv"
         i += 1
 
-    content = CSV_HEADER + "\r\n" + "\r\n".join(rows) + "\r\n"
-    out_path.write_bytes(content.encode("utf-8"))
+    content = CSV_HEADER + "\r\n" + "\r\n".join(r.rstrip("\r\n") for r in rows) + "\r\n"
+    async with aiofiles.open(out_path, "w", encoding="utf-8", newline="") as f:
+        await f.write(content)
     return {"ok": True, "path": str(out_path)}
 
 # ---- WebSocket Endpoint ----
@@ -1163,8 +1140,8 @@ if __name__ == "__main__":
 
     print("Available serial ports:")
     ports = serial.tools.list_ports.comports()
-    for port_info, desc, hwid in sorted(ports):
-        print(f"- {port_info}: {desc} [{hwid}]")
+    for p in sorted(ports, key=lambda x: x.device):
+        print(f"- {p.device}: {p.description} [{p.hwid}]")
     print("="*50)
 
     if sys.platform == 'win32':
