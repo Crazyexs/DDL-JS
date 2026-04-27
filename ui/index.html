@@ -97,7 +97,7 @@
     </div>
     <div class="group">
       <button id="btnOpenCsvFolder" class="btn sm">Log Folder</button>
-      <button id="btnCsvMode" class="btn sm ghost" title="Toggle CSV Filter Mode">CSV: CLEAN</button>
+
       <button id="btnSim" class="btn sm">Run Sim</button>
       <button id="btnExportKML" class="btn sm primary">Export KML</button>
     </div>
@@ -206,7 +206,16 @@
     <!-- LOGS (Right Column, Bottom) -->
     <section class="panel logs-panel">
       <div class="panel-title">
-        <div>Telemetry Control &amp; Logs</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          Telemetry Control &amp; Logs
+          <span id="logBadge" style="
+            font-size:11px; font-weight:700; font-family:ui-monospace,monospace;
+            padding:2px 7px; border-radius:999px;
+            background:color-mix(in oklab,var(--ok) 14%,transparent 86%);
+            color:color-mix(in oklab,var(--ok) 75%,black 25%);
+            border:1px solid color-mix(in oklab,var(--ok) 35%,var(--edge) 65%);
+          ">LOG: default</span>
+        </div>
         <div class="lastcmd">
           <div class="tit">Last Cmd</div>
           <div id="lastCmd" class="val">—</div>

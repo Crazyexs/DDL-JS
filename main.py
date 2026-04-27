@@ -6,6 +6,7 @@ import math
 
 
 import os
+import re
 import sys
 import json
 import csv
@@ -118,6 +119,10 @@ class IngestBody(BaseModel):
     """Structure for receiving raw data lines directly."""
     line: str
 
+class LogBody(BaseModel):
+    """Structure for switching the active log file."""
+    label: str
+
 class Telemetry(BaseModel):
     """
     The structure of a single packet of data from the CanSat.
@@ -165,9 +170,10 @@ class GSState:
     csv_ready: bool = False     # Is the CSV file ready to be written to?
     last_cmd: str = "—"         # The last command we sent
     sim_enabled: bool = False   # Is the simulation mode enabled?
-    csv_save_raw: bool = False  # Save everything (raw mode) or only clean matched telemetry
+    # Active log label — empty string means default file (Flight_1043.csv)
+    log_label: str = ""
     # KML auto-save: collect GPS points for Google Earth export
-    kml_points: list = field(default_factory=list)  # [{lat, lon, alt}]
+    kml_points: Deque = field(default_factory=lambda: deque(maxlen=3000))  # [{lat, lon, alt, state}]
     kml_max_alt: float = 0.0    # Track max altitude for KML metadata
 
 state = GSState()
@@ -175,22 +181,109 @@ state = GSState()
 # ===================== KML AUTO-SAVE =====================
 KML_CURRENT = DATA_DIR / f"Flight_{TEAM_ID:04}.kml"
 
+def get_active_csv() -> Path:
+    """Returns the CSV path for the current log session."""
+    if state.log_label:
+        return DATA_DIR / f"Flight_{TEAM_ID:04}_{state.log_label}.csv"
+    return CSV_CURRENT
+
+def get_active_kml() -> Path:
+    """Returns the KML path for the current log session."""
+    if state.log_label:
+        return DATA_DIR / f"Flight_{TEAM_ID:04}_{state.log_label}.kml"
+    return KML_CURRENT
+
+
 def _build_kml(points: list, max_alt: float) -> str:
-    """Builds a KML string from collected GPS points."""
+    """Builds a KML string from collected GPS points, segmented by flight state."""
     if len(points) < 2:
         return ""
-    coords = "\n          ".join(
-        f"{p['lon']:.6f},{p['lat']:.6f},{p['alt']:.1f}" for p in points
-    )
+
+    # Define styles for different states (KML color is aabbggrr)
+    # ff00ff00 = Green (Ascent)
+    # ff00aaff = Orange (Descent)
+    # ffffffff = White (Default)
+    styles = {
+        "ASCENT":  {"color": "ff00ff00", "width": "4"},
+        "DESCENT": {"color": "ff00aaff", "width": "4"},
+        "DEFAULT": {"color": "ffffffff", "width": "3"},
+    }
+
+    # Group points into segments by state
+    segments = []
+    if points:
+        current_state = points[0].get("state", "UNKNOWN")
+        current_segment = [points[0]]
+        
+        for p in points[1:]:
+            s = p.get("state", "UNKNOWN")
+            if s != current_state:
+                segments.append({"state": current_state, "points": current_segment})
+                current_state = s
+                current_segment = [p]
+            else:
+                current_segment.append(p)
+        segments.append({"state": current_state, "points": current_segment})
+
+    placemarks = ""
+    for i, seg in enumerate(segments):
+        state_name = seg["state"]
+        pts = seg["points"]
+        if len(pts) < 1: continue
+        
+        # If it's a single point segment, we can't draw a line, but we usually want to connect to the next
+        # So we add the first point of the next segment if it exists
+        if i < len(segments) - 1:
+            pts_to_draw = pts + [segments[i+1]["points"][0]]
+        else:
+            pts_to_draw = pts
+
+        if len(pts_to_draw) < 2: continue
+
+        style = styles.get(state_name, styles["DEFAULT"])
+        color = style["color"]
+        width = style["width"]
+        
+        coords = "\n          ".join(f"{p['lon']:.6f},{p['lat']:.6f},{p['alt']:.1f}" for p in pts_to_draw)
+        
+        placemarks += f"""
+    <Placemark>
+      <name>{state_name} Phase</name>
+      <Style><LineStyle><color>{color}</color><width>{width}</width></LineStyle></Style>
+      <LineString>
+        <extrude>1</extrude><tessellate>1</tessellate>
+        <altitudeMode>relativeToGround</altitudeMode>
+        <coordinates>
+          {coords}
+        </coordinates>
+      </LineString>
+    </Placemark>"""
+
+    # Add Deployment marker if we find a state change that looks like deployment
+    deployment_placemark = ""
+    for i in range(1, len(points)):
+        prev_s = points[i-1].get("state", "")
+        curr_s = points[i].get("state", "")
+        # Look for the transition out of ASCENT
+        if prev_s == "ASCENT" and curr_s != "ASCENT":
+            p = points[i]
+            deployment_placemark = f"""
+    <Placemark><name>Deployment Point</name>
+      <Style><IconStyle><scale>1.2</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>
+      <Point><altitudeMode>relativeToGround</altitudeMode>
+        <coordinates>{p['lon']:.6f},{p['lat']:.6f},{p['alt']:.1f}</coordinates>
+      </Point></Placemark>"""
+            break
+
     first = points[0]
     last = points[-1]
     apex = max(points, key=lambda p: p['alt'])
+
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
     <name>DAEDALUS #{TEAM_ID} Flight Path</name>
     <description>Max altitude: {int(max_alt)} m | Packets: {len(points)}</description>
-    <Style id="path"><LineStyle><color>ff00aaff</color><width>3</width></LineStyle></Style>
     <Style id="launch"><IconStyle><color>ff00cc00</color><scale>1.2</scale>
       <Icon><href>http://maps.google.com/mapfiles/kml/paddle/go.png</href></Icon>
     </IconStyle></Style>
@@ -199,17 +292,9 @@ def _build_kml(points: list, max_alt: float) -> str:
     </IconStyle></Style>
     <Style id="apex"><IconStyle><color>ff00ffff</color><scale>1.1</scale>
       <Icon><href>http://maps.google.com/mapfiles/kml/shapes/star.png</href></Icon>
-    </IconStyle></Style>
-    <Placemark>
-      <name>Flight Path</name><styleUrl>#path</styleUrl>
-      <LineString>
-        <extrude>1</extrude><tessellate>1</tessellate>
-        <altitudeMode>absolute</altitudeMode>
-        <coordinates>
-          {coords}
-        </coordinates>
-      </LineString>
-    </Placemark>
+    </Style>
+    {placemarks}
+    {deployment_placemark}
     <Placemark><name>Launch</name><styleUrl>#launch</styleUrl>
       <Point><altitudeMode>clampToGround</altitudeMode>
         <coordinates>{first['lon']:.6f},{first['lat']:.6f},0</coordinates>
@@ -219,18 +304,22 @@ def _build_kml(points: list, max_alt: float) -> str:
         <coordinates>{last['lon']:.6f},{last['lat']:.6f},0</coordinates>
       </Point></Placemark>
     <Placemark><name>Apogee ({int(apex['alt'])} m)</name><styleUrl>#apex</styleUrl>
-      <Point><altitudeMode>absolute</altitudeMode>
+      <Point><altitudeMode>relativeToGround</altitudeMode>
         <coordinates>{apex['lon']:.6f},{apex['lat']:.6f},{apex['alt']:.1f}</coordinates>
       </Point></Placemark>
   </Document>
 </kml>"""
 
 async def _save_kml():
-    """Writes the current KML data to disk (called after every GPS-valid telemetry packet)."""
+    """Writes the current KML data to disk."""
     kml_str = _build_kml(state.kml_points, state.kml_max_alt)
     if kml_str:
-        async with aiofiles.open(KML_CURRENT, "w", encoding="utf-8") as f:
-            await f.write(kml_str)
+        try:
+            async with aiofiles.open(get_active_kml(), "w", encoding="utf-8") as f:
+                await f.write(kml_str)
+        except Exception as e:
+            log_json(level="error", event="kml_save_failed", error=str(e))
+
 ring: Deque[str] = deque(maxlen=10_000)   # Keeps the last 10,000 log messages in memory
 ws_clients: Set[WebSocket] = set()        # A list of all web browsers currently connected
 uplink_q: asyncio.Queue[str] = asyncio.Queue() # A queue (line) of commands waiting to be sent
@@ -238,10 +327,11 @@ uplink_q: asyncio.Queue[str] = asyncio.Queue() # A queue (line) of commands wait
 _serial_transport = None
 _serial_writer_lock = asyncio.Lock()
 
-def ensure_csv_header():
+def ensure_csv_header(path: Optional[Path] = None):
     """Checks if the CSV file exists. If not, creates it and adds the header row."""
-    if not CSV_CURRENT.exists():
-        CSV_CURRENT.write_bytes((CSV_HEADER + "\r\n").encode("utf-8"))
+    target = path or get_active_csv()
+    if not target.exists():
+        target.write_bytes((CSV_HEADER + "\r\n").encode("utf-8"))
     state.csv_ready = True
 
 ensure_csv_header()
@@ -407,9 +497,6 @@ async def handle_telemetry_line(raw: str):
     This is the core function that handles each line of data received.
     It uses 'TELEMETRY_CONFIG' to know which column is which.
     """
-    if state.csv_ready and state.csv_save_raw:
-        async with aiofiles.open(CSV_CURRENT, "a", encoding="utf-8", newline="") as f:
-            await f.write(raw + "\r\n")
 
     # Use csv.reader to handle quoted fields correctly (e.g., "CX,ON")
     reader = csv.reader([raw], skipinitialspace=True)
@@ -426,7 +513,10 @@ async def handle_telemetry_line(raw: str):
     
     if len(parts) < min_required:
         ring.append(json.dumps({"bad_line": raw}))
-        log_json(level="warn", event="telemetry_short", len=len(parts), required=min_required)
+        # Save unexpected lines so we don't lose them
+        if state.csv_ready:
+            async with aiofiles.open(CSV_CURRENT, "a", encoding="utf-8", newline="") as f:
+                await f.write(raw + "\r\n")
         return
 
     # 1) Parse data dynamically using the config
@@ -486,13 +576,13 @@ async def handle_telemetry_line(raw: str):
     # This '**parsed_data' magic passes the dictionary as arguments
     tel = Telemetry(**parsed_data)
 
-    # 3) Reconstruct the CLEAN CSV line (exactly what the CanSat sent, no GS columns)
+    # 3) Reconstruct the CLEAN CSV line (we don't save this anymore, we save RAW)
     clean_csv = ",".join(clean_parts)
 
-    # 4) Append to the CSV file
-    if state.csv_ready and not state.csv_save_raw:
-        async with aiofiles.open(CSV_CURRENT, "a", encoding="utf-8", newline="") as f:
-            await f.write(clean_csv + "\r\n")
+    # 4) Append to the CSV file (ALWAYS SAVE RAW EXACTLY AS RECEIVED)
+    if state.csv_ready:
+        async with aiofiles.open(get_active_csv(), "a", encoding="utf-8", newline="") as f:
+            await f.write(raw + "\r\n")
 
     # 4b) Auto-save KML (Google Earth) — collect GPS points and write to disk
     gps_lat = parsed_data.get("gps_lat", 0.0)
@@ -501,12 +591,15 @@ async def handle_telemetry_line(raw: str):
     alt_m = parsed_data.get("altitude_m", 0.0)
     if isinstance(gps_lat, (int, float)) and isinstance(gps_lon, (int, float)):
         if gps_lat != 0.0 and gps_lon != 0.0 and gps_sats > 5:  # Only save with good GPS fix (>5 sats)
-            state.kml_points.append({"lat": gps_lat, "lon": gps_lon, "alt": max(0, alt_m)})
+            state.kml_points.append({
+                "lat": gps_lat, 
+                "lon": gps_lon, 
+                "alt": max(0, alt_m),
+                "state": parsed_data.get("state", "UNKNOWN")
+            })
             if alt_m > state.kml_max_alt:
                 state.kml_max_alt = alt_m
-            # Keep max 3000 points to cap memory
-            if len(state.kml_points) > 3000:
-                state.kml_points.pop(0)
+            # deque(maxlen=3000) auto-evicts oldest — save on every good GPS fix (sats > 5)
             await _save_kml()
 
     # 5) Update counters
@@ -834,16 +927,6 @@ async def api_serial_set(cfg: SerialCfg):
             
     return {"ok": True}
 
-class CsvModeBody(BaseModel):
-    raw: bool
-
-@app.post("/api/csv/mode")
-async def api_csv_mode(body: CsvModeBody):
-    """Toggles whether the CSV saves exactly what the payload sends or filters to config."""
-    state.csv_save_raw = body.raw
-    log_json(event="csv_mode_changed", raw_mode=body.raw)
-    return {"ok": True, "raw": state.csv_save_raw}
-
 # ---- Command uplink ----
 @app.post("/api/command")
 async def api_command(body: CommandBody):
@@ -854,34 +937,31 @@ async def api_command(body: CommandBody):
     # [REQ-82] Set time by ground command (ST,GPS or ST,UTC)
     # [REQ-86] Commands to activate all mechanisms (MEC,PL,ON etc.)
     """
+    global sim_task
     cmd_upper = body.cmd.strip().upper()
-    
+
     # body.cmd is something like "CX,ON"
     uplink = f"CMD,{TEAM_ID:04},{body.cmd.strip()}"
     state.last_cmd = uplink
     await uplink_q.put(uplink)
-    
+
     # Trigger simulation file streaming if SIM,ACTIVATE is sent manually
     if cmd_upper == "SIM,ENABLE":
         state.sim_enabled = True
     elif cmd_upper == "SIM,DISABLE":
         state.sim_enabled = False
-        global sim_task
         if sim_task and not sim_task.done():
             sim_task.cancel()
-            
+
     if cmd_upper == "SIM,ACTIVATE":
         if state.sim_enabled:
-            # global sim_task (already defined above if needed, but safe to re-declare or just use)
             if sim_task and not sim_task.done():
-                pass 
+                pass
             else:
-                # Start streaming the default file
                 path = ROOT_DIR / "cansat_2023_simp.csv"
                 sim_task = asyncio.create_task(sim_file_streamer(path))
         else:
-             log_json(level="warn", event="sim_activate_ignored", reason="sim_not_enabled")
-             # Optionally notify user via WS error, but log is sufficient for now
+            log_json(level="warn", event="sim_activate_ignored", reason="sim_not_enabled")
             
     return {"ok": True, "sent": uplink}
 
@@ -917,16 +997,61 @@ async def api_ingest(body: IngestBody):
     await handle_telemetry_line(line)
     return {"ok": True}
 
+# ---- Log switching ----
+@app.get("/api/log/current")
+async def api_log_current():
+    """Returns the active log label and file path."""
+    return {
+        "label": state.log_label or "default",
+        "file": str(get_active_csv()),
+        "kml":  str(get_active_kml()),
+    }
+
+@app.post("/api/log/set")
+async def api_log_set(body: LogBody):
+    """
+    Switch the active log file.
+    Send {"label": "log1"} to start writing to Flight_1043_log1.csv.
+    Send {"label": ""} to return to the default Flight_1043.csv.
+    """
+    # Sanitize: alphanumeric, underscore, hyphen only; max 32 chars
+    raw = body.label.strip().replace(" ", "_")
+    label = re.sub(r"[^a-zA-Z0-9_\-]", "", raw)[:32]
+
+    state.log_label = label
+
+    # Create the new CSV with a header if it doesn't exist yet
+    new_csv = get_active_csv()
+    ensure_csv_header(new_csv)
+
+    # Reset KML state so this log gets its own flight path
+    state.kml_points.clear()
+    state.kml_max_alt = 0.0
+
+    # Reset packet-loss tracking so a satellite restart doesn't skew counters
+    state.last_pkt = None
+
+    display = label or "default"
+    log_json(event="log_switched", label=display, file=str(new_csv))
+
+    await broadcast_ws({
+        "type": "log_switched",
+        "label": display,
+        "file": new_csv.name,
+    })
+    return {"ok": True, "label": display, "file": str(new_csv)}
+
 # ---- KML download endpoint ----
 @app.get("/api/kml")
 async def api_kml_download():
-    """Download the auto-saved KML file (Google Earth flight path)."""
-    if KML_CURRENT.exists():
+    """Download the auto-saved KML file for the active log session."""
+    kml_path = get_active_kml()
+    if kml_path.exists():
         from fastapi.responses import FileResponse
         return FileResponse(
-            path=str(KML_CURRENT),
+            path=str(kml_path),
             media_type="application/vnd.google-earth.kml+xml",
-            filename=KML_CURRENT.name,
+            filename=kml_path.name,
         )
     raise HTTPException(status_code=404, detail="No KML file yet — waiting for GPS data.")
 
