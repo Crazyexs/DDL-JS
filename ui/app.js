@@ -353,7 +353,7 @@ if (!window.__DGS_BOOTED__) {
       });
     }
 
-    // ── 3D mode (requires WiFi) ────────────────────────────────────────
+    // ── 3D mode — works fully offline via bundled NaturalEarthII tiles ──
     function initCesium3D() {
       if (!el.mapEl) return;
       Cesium.Ion.defaultAccessToken = '';
@@ -362,7 +362,7 @@ if (!window.__DGS_BOOTED__) {
         baseLayerPicker:      false,
         geocoder:             false,
         homeButton:           false,
-        sceneModePicker:      true,   // 3D / Columbus view / 2D toggle
+        sceneModePicker:      true,
         navigationHelpButton: false,
         animation:            false,
         timeline:             false,
@@ -372,19 +372,38 @@ if (!window.__DGS_BOOTED__) {
       });
       st.cesiumViewer = viewer;
 
-      // Esri World Imagery = Google Earth quality satellite, free, no API key
+      // Always load bundled NaturalEarthII first — guaranteed offline base layer
       viewer.scene.imageryLayers.removeAll();
       viewer.scene.imageryLayers.addImageryProvider(
-        new Cesium.UrlTemplateImageryProvider({
-          url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-          credit: 'Esri, Maxar, GeoEye, Earthstar Geographics, CNES/Airbus DS',
-          maximumLevel: 19,
+        new Cesium.TileMapServiceImageryProvider({
+          url: Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII'),
+          fileExtension: 'jpg',
         })
       );
 
+      // Add high-res Esri satellite tiles on top when online — degrades gracefully if offline
+      if (navigator.onLine) {
+        try {
+          viewer.scene.imageryLayers.addImageryProvider(
+            new Cesium.UrlTemplateImageryProvider({
+              url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+              credit: 'Esri, Maxar, GeoEye, Earthstar Geographics, CNES/Airbus DS',
+              maximumLevel: 19,
+            })
+          );
+        } catch(e) {}
+      }
+
+      // If WiFi drops mid-flight, strip the online layer — NaturalEarthII stays
+      window.addEventListener('offline', () => {
+        try {
+          const layers = viewer.scene.imageryLayers;
+          if (layers.length > 1) layers.remove(layers.get(1));
+        } catch(e) {}
+      }, { once: true });
+
       viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
 
-      // Near-horizontal camera so altitude is visually obvious
       viewer.camera.setView({
         destination: Cesium.Cartesian3.fromDegrees(98.978, 18.781, 1200),
         orientation: {
@@ -395,49 +414,36 @@ if (!window.__DGS_BOOTED__) {
       });
 
       _cesiumSetupEntities(viewer);
-
-      if (el.mapToggle) el.mapToggle.textContent = '→ 2D';  // button shows current action
-
-      // If WiFi drops mid-flight, switch to NaturalEarthII offline fallback
-      window.addEventListener('offline', () => {
-        try {
-          viewer.scene.imageryLayers.removeAll();
-          viewer.scene.imageryLayers.addImageryProvider(
-            new Cesium.TileMapServiceImageryProvider({
-              url: Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII'),
-              fileExtension: 'jpg',
-            })
-          );
-        } catch(e) {}
-      }, { once: true });
+      if (el.mapToggle) el.mapToggle.textContent = '→ 2D';
     }
 
-    // ── 2D mode (offline fallback) ──────────────────────────────────
+    // ── 2D mode (manual toggle) — bundled NaturalEarthII base + OSM detail online ──
     function initLeaflet2D() {
       if (!el.mapEl) return;
       st.map = L.map('map', { zoomControl: true, attributionControl: false })
         .setView([18.788, 98.985], 15);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        { maxZoom: 19 }).addTo(st.map);
+
+      // Bundled NaturalEarthII tiles — always available offline (upscaled beyond zoom 2)
+      L.tileLayer('/vendor/cesium/Cesium/Assets/Textures/NaturalEarthII/{z}/{x}/{y}.jpg', {
+        tms: true,
+        maxNativeZoom: 2,
+        maxZoom: 19,
+      }).addTo(st.map);
+
+      // OSM detail layer on top — renders from browser cache when offline
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        opacity: 0.75,
+      }).addTo(st.map);
+
       st.marker = L.marker([18.788, 98.985]).addTo(st.map);
-      if (el.mapToggle) el.mapToggle.textContent = '→ 3D';  // button shows current action
+      if (el.mapToggle) el.mapToggle.textContent = '→ 3D';
     }
 
-    // ── Auto-detect WiFi and pick the right map ───────────────────────
+    // ── Always use Cesium — NaturalEarthII base works fully offline ──────
     function initMap() {
       if (!el.mapEl) return;
-      if (navigator.onLine) {
-        initCesium3D();  // WiFi ✓ → 3D satellite globe
-      } else {
-        initLeaflet2D(); // No WiFi → 2D Leaflet (may show cached OSM tiles)
-        // Auto-upgrade to 3D if WiFi comes back
-        window.addEventListener('online', () => {
-          if (st.map) { try { st.map.remove(); } catch(e) {} st.map = null; st.marker = null; }
-          if (el.mapEl) el.mapEl.innerHTML = '';
-          initCesium3D();
-        }, { once: true });
-      }
-      // Wire toggle button
+      initCesium3D();
       el.mapToggle?.addEventListener('click', toggleMap);
     }
 
@@ -1214,15 +1220,21 @@ if (!window.__DGS_BOOTED__) {
       if (st.recoveryMap) return;
       st.recoveryMap = L.map('recoveryMap', { zoomControl: true, attributionControl: false }).setView([18.788, 98.985], 16);
 
-      // Offline Map Support for Mark Walker Award: 
-      // We cannot fetch openstreetmap tiles without WiFi, so we load an empty color background
-      // and rely entirely on the Distance/Heading readouts and drawn paths to navigate in the field.
-      // L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(st.recoveryMap);
-      st.recoveryMap.getContainer().style.background = '#e0e0e0'; // Light grey offline background
+      // Bundled NaturalEarthII — guaranteed offline base layer (upscaled beyond zoom 2)
+      L.tileLayer('/vendor/cesium/Cesium/Assets/Textures/NaturalEarthII/{z}/{x}/{y}.jpg', {
+        tms: true,
+        maxNativeZoom: 2,
+        maxZoom: 19,
+      }).addTo(st.recoveryMap);
 
-      st.recoveryMarker = L.marker([18.788, 98.985]).addTo(st.recoveryMap); // Payload 
-      st.gcsMarker = L.circleMarker([18.788, 98.985], { radius: 8, color: 'blue' }).addTo(st.recoveryMap); // User
+      // OSM detail layer — serves from browser cache when offline, full tiles when online
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        opacity: 0.75,
+      }).addTo(st.recoveryMap);
 
+      st.recoveryMarker = L.marker([18.788, 98.985]).addTo(st.recoveryMap);
+      st.gcsMarker = L.circleMarker([18.788, 98.985], { radius: 8, color: '#4da3ff', fillColor: '#4da3ff', fillOpacity: 0.9, weight: 2 }).addTo(st.recoveryMap);
       st.recoveryLine = L.polyline([[18.788, 98.985], [18.788, 98.985]], { color: 'red', weight: 4, dashArray: '10, 10' }).addTo(st.recoveryMap);
     }
 

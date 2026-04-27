@@ -994,6 +994,9 @@ async def api_log_set(body: LogBody):
     raw = body.label.strip().replace(" ", "_")
     label = re.sub(r"[^a-zA-Z0-9_\-]", "", raw)[:32]
 
+    # Save the current session's KML before switching so no data is lost
+    await _save_kml()
+
     state.log_label = label
 
     # Create the new CSV with a header if it doesn't exist yet
