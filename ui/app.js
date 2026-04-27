@@ -731,11 +731,27 @@ if (!window.__DGS_BOOTED__) {
       const voltage = t.voltage_v || 0;
       el.val_voltage && (el.val_voltage.textContent = `${num(voltage, 2)} V`);
       
-      // Calculate 2S Li-ion percentage (Max 8.4V, Min 6.0V)
+      // 2S Li-ion discharge curve lookup (per-cell × 2): non-linear interpolation
+      // Points derived from standard 18650 discharge curve at ~0.5C
+      const LI_ION_2S = [
+        [8.40, 100], [8.20, 95], [8.00, 88], [7.80, 78],
+        [7.60, 63],  [7.40, 48], [7.20, 32], [7.00, 18],
+        [6.80, 9],   [6.60, 4],  [6.40, 1],  [6.00, 0],
+      ];
       let pct = 0;
-      if (voltage >= 8.4) pct = 100;
-      else if (voltage <= 6.0) pct = 0;
-      else pct = ((voltage - 6.0) / 2.4) * 100;
+      if (voltage >= LI_ION_2S[0][0]) {
+        pct = 100;
+      } else if (voltage <= LI_ION_2S[LI_ION_2S.length - 1][0]) {
+        pct = 0;
+      } else {
+        for (let i = 0; i < LI_ION_2S.length - 1; i++) {
+          const [v1, p1] = LI_ION_2S[i], [v2, p2] = LI_ION_2S[i + 1];
+          if (voltage <= v1 && voltage >= v2) {
+            pct = p2 + (p1 - p2) * ((voltage - v2) / (v1 - v2));
+            break;
+          }
+        }
+      }
       
       if (el.val_battery_pct) {
           el.val_battery_pct.textContent = `${num(pct, 0)}%`;

@@ -72,12 +72,32 @@ BAUD_PRESETS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 92160
 def load_telemetry_config():
     config_path = ROOT_DIR / "telemetry_config.json"
     if not config_path.exists():
-        # Fallback default if file is missing
-        print("Warning: telemetry_config.json not found, using default.")
+        print("Warning: telemetry_config.json not found, using built-in default.")
         return [
-            { "csv_header": "TEAM_ID", "internal_key": "team_id", "type": "int" },
-            { "csv_header": "MISSION_TIME", "internal_key": "mission_time", "type": "str" },
-            # ... (shortened fallback for safety, but ideally the file always exists)
+            { "csv_header": "TEAM_ID",       "internal_key": "team_id",        "type": "int"   },
+            { "csv_header": "MISSION_TIME",  "internal_key": "mission_time",   "type": "str"   },
+            { "csv_header": "PACKET_COUNT",  "internal_key": "packet_count",   "type": "int"   },
+            { "csv_header": "MODE",          "internal_key": "mode",           "type": "str"   },
+            { "csv_header": "STATE",         "internal_key": "state",          "type": "str"   },
+            { "csv_header": "ALTITUDE",      "internal_key": "altitude_m",     "type": "float" },
+            { "csv_header": "TEMPERATURE",   "internal_key": "temperature_c",  "type": "float" },
+            { "csv_header": "PRESSURE",      "internal_key": "pressure_kpa",   "type": "float" },
+            { "csv_header": "VOLTAGE",       "internal_key": "voltage_v",      "type": "float" },
+            { "csv_header": "CURRENT",       "internal_key": "current_a",      "type": "float" },
+            { "csv_header": "GYRO_R",        "internal_key": "gyro_r_dps",     "type": "float" },
+            { "csv_header": "GYRO_P",        "internal_key": "gyro_p_dps",     "type": "float" },
+            { "csv_header": "GYRO_Y",        "internal_key": "gyro_y_dps",     "type": "float" },
+            { "csv_header": "ACCEL_R",       "internal_key": "accel_r_dps2",   "type": "float" },
+            { "csv_header": "ACCEL_P",       "internal_key": "accel_p_dps2",   "type": "float" },
+            { "csv_header": "ACCEL_Y",       "internal_key": "accel_y_dps2",   "type": "float" },
+            { "csv_header": "GPS_TIME",      "internal_key": "gps_time",       "type": "str"   },
+            { "csv_header": "GPS_ALTITUDE",  "internal_key": "gps_altitude_m", "type": "float" },
+            { "csv_header": "GPS_LATITUDE",  "internal_key": "gps_lat",        "type": "float" },
+            { "csv_header": "GPS_LONGITUDE", "internal_key": "gps_lon",        "type": "float" },
+            { "csv_header": "GPS_SATS",      "internal_key": "gps_sats",       "type": "int"   },
+            { "csv_header": "CMD_ECHO",      "internal_key": "cmd_echo",       "type": "str"   },
+            { "csv_header": "YAW",           "internal_key": "yaw",            "type": "float" },
+            { "csv_header": "TOF",           "internal_key": "tof",            "type": "float" },
         ]
     with open(config_path, "r") as f:
         return json.load(f)
@@ -634,11 +654,12 @@ async def sim_file_streamer(file_path: Path):
 
                 if s.startswith("CMD,"):
                     await uplink_q.put(s)
-                elif s.isdigit():
-                    await uplink_q.put(f"CMD,{TEAM_ID:04},SIMP,{s}")
                 else:
-                    # Fallback for unknown formats, or maybe log a warning
-                    pass
+                    try:
+                        float(s)  # accept both int and float pressure values
+                        await uplink_q.put(f"CMD,{TEAM_ID:04},SIMP,{s}")
+                    except ValueError:
+                        pass  # skip header rows or unrecognised lines
                 
                 # Wait 1 second between sends (Requirement: 1 Hz)
                 await asyncio.sleep(1.0)
