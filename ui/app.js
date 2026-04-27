@@ -353,7 +353,7 @@ if (!window.__DGS_BOOTED__) {
       });
     }
 
-    // ── 3D mode — works fully offline via bundled NaturalEarthII tiles ──
+    // ── 3D mode ── tiles served from SW cache when offline ──────────────
     function initCesium3D() {
       if (!el.mapEl) return;
       Cesium.Ion.defaultAccessToken = '';
@@ -372,40 +372,14 @@ if (!window.__DGS_BOOTED__) {
       });
       st.cesiumViewer = viewer;
 
-      // Always load bundled NaturalEarthII first — guaranteed offline base layer.
-      // UrlTemplateImageryProvider skips the directory-probe that TileMapServiceImageryProvider
-      // does (which causes a 404 on FastAPI StaticFiles and breaks the entire layer).
-      // {reverseY} is required: NaturalEarthII uses TMS y-origin at south (y=0 = south pole).
       viewer.scene.imageryLayers.removeAll();
       viewer.scene.imageryLayers.addImageryProvider(
         new Cesium.UrlTemplateImageryProvider({
-          url: '/vendor/cesium/Cesium/Assets/Textures/NaturalEarthII/{z}/{x}/{reverseY}.jpg',
-          tilingScheme: new Cesium.GeographicTilingScheme(),
-          maximumLevel: 2,
-          credit: 'Natural Earth II',
+          url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+          credit: 'Esri, Maxar, GeoEye, Earthstar Geographics, CNES/Airbus DS',
+          maximumLevel: 19,
         })
       );
-
-      // Add high-res Esri satellite tiles on top when online — degrades gracefully if offline
-      if (navigator.onLine) {
-        try {
-          viewer.scene.imageryLayers.addImageryProvider(
-            new Cesium.UrlTemplateImageryProvider({
-              url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-              credit: 'Esri, Maxar, GeoEye, Earthstar Geographics, CNES/Airbus DS',
-              maximumLevel: 19,
-            })
-          );
-        } catch(e) {}
-      }
-
-      // If WiFi drops mid-flight, strip the online layer — NaturalEarthII stays
-      window.addEventListener('offline', () => {
-        try {
-          const layers = viewer.scene.imageryLayers;
-          if (layers.length > 1) layers.remove(layers.get(1));
-        } catch(e) {}
-      }, { once: true });
 
       viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
 
@@ -422,30 +396,20 @@ if (!window.__DGS_BOOTED__) {
       if (el.mapToggle) el.mapToggle.textContent = '→ 2D';
     }
 
-    // ── 2D mode (manual toggle) — bundled NaturalEarthII base + OSM detail online ──
+    // ── 2D mode (manual toggle) ── tiles served from SW cache when offline ──
     function initLeaflet2D() {
       if (!el.mapEl) return;
       st.map = L.map('map', { zoomControl: true, attributionControl: false })
         .setView([18.788, 98.985], 15);
 
-      // Bundled NaturalEarthII tiles — always available offline (upscaled beyond zoom 2)
-      L.tileLayer('/vendor/cesium/Cesium/Assets/Textures/NaturalEarthII/{z}/{x}/{y}.jpg', {
-        tms: true,
-        maxNativeZoom: 2,
-        maxZoom: 19,
-      }).addTo(st.map);
-
-      // OSM detail layer on top — renders from browser cache when offline
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        opacity: 0.75,
       }).addTo(st.map);
 
       st.marker = L.marker([18.788, 98.985]).addTo(st.map);
       if (el.mapToggle) el.mapToggle.textContent = '→ 3D';
     }
 
-    // ── Always use Cesium — NaturalEarthII base works fully offline ──────
     function initMap() {
       if (!el.mapEl) return;
       initCesium3D();
@@ -1225,17 +1189,8 @@ if (!window.__DGS_BOOTED__) {
       if (st.recoveryMap) return;
       st.recoveryMap = L.map('recoveryMap', { zoomControl: true, attributionControl: false }).setView([18.788, 98.985], 16);
 
-      // Bundled NaturalEarthII — guaranteed offline base layer (upscaled beyond zoom 2)
-      L.tileLayer('/vendor/cesium/Cesium/Assets/Textures/NaturalEarthII/{z}/{x}/{y}.jpg', {
-        tms: true,
-        maxNativeZoom: 2,
-        maxZoom: 19,
-      }).addTo(st.recoveryMap);
-
-      // OSM detail layer — serves from browser cache when offline, full tiles when online
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        opacity: 0.75,
       }).addTo(st.recoveryMap);
 
       st.recoveryMarker = L.marker([18.788, 98.985]).addTo(st.recoveryMap);
@@ -1375,6 +1330,9 @@ if (!window.__DGS_BOOTED__) {
     }
 
     function init() {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      }
       initMap();
       fillCmds();
       initTheme();
