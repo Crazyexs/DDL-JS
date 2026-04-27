@@ -372,12 +372,17 @@ if (!window.__DGS_BOOTED__) {
       });
       st.cesiumViewer = viewer;
 
-      // Always load bundled NaturalEarthII first — guaranteed offline base layer
+      // Always load bundled NaturalEarthII first — guaranteed offline base layer.
+      // UrlTemplateImageryProvider skips the directory-probe that TileMapServiceImageryProvider
+      // does (which causes a 404 on FastAPI StaticFiles and breaks the entire layer).
+      // {reverseY} is required: NaturalEarthII uses TMS y-origin at south (y=0 = south pole).
       viewer.scene.imageryLayers.removeAll();
       viewer.scene.imageryLayers.addImageryProvider(
-        new Cesium.TileMapServiceImageryProvider({
-          url: Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII'),
-          fileExtension: 'jpg',
+        new Cesium.UrlTemplateImageryProvider({
+          url: '/vendor/cesium/Cesium/Assets/Textures/NaturalEarthII/{z}/{x}/{reverseY}.jpg',
+          tilingScheme: new Cesium.GeographicTilingScheme(),
+          maximumLevel: 2,
+          credit: 'Natural Earth II',
         })
       );
 
