@@ -38,7 +38,7 @@ TEAM_ID = 1043
 # This is the default USB port the computer uses to talk to the radio.
 # On Windows it is usually "COM3", "COM4", etc.
 # On Linux/Mac it looks like "/dev/ttyUSB0".
-DEFAULT_PORT = "/dev/cu.usbserial-00000000"
+DEFAULT_PORT = "/dev/cu.usbserial-A50285BI"
 
 # This is the speed of the connection. Both the radio and computer must match this number.
 DEFAULT_BAUD = 115200
@@ -252,7 +252,7 @@ def _build_kml(points: list, max_alt: float) -> str:
       <Style><LineStyle><color>{color}</color><width>{width}</width></LineStyle></Style>
       <LineString>
         <extrude>1</extrude><tessellate>1</tessellate>
-        <altitudeMode>relativeToGround</altitudeMode>
+        <altitudeMode>absolute</altitudeMode>
         <coordinates>
           {coords}
         </coordinates>
@@ -270,7 +270,7 @@ def _build_kml(points: list, max_alt: float) -> str:
             deployment_placemark = f"""
     <Placemark><name>Deployment Point</name>
       <Style><IconStyle><scale>1.2</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>
-      <Point><altitudeMode>relativeToGround</altitudeMode>
+      <Point><altitudeMode>absolute</altitudeMode>
         <coordinates>{p['lon']:.6f},{p['lat']:.6f},{p['alt']:.1f}</coordinates>
       </Point></Placemark>"""
             break
@@ -292,7 +292,7 @@ def _build_kml(points: list, max_alt: float) -> str:
     </IconStyle></Style>
     <Style id="apex"><IconStyle><color>ff00ffff</color><scale>1.1</scale>
       <Icon><href>http://maps.google.com/mapfiles/kml/shapes/star.png</href></Icon>
-    </Style>
+    </IconStyle></Style>
     {placemarks}
     {deployment_placemark}
     <Placemark><name>Launch</name><styleUrl>#launch</styleUrl>
@@ -304,7 +304,7 @@ def _build_kml(points: list, max_alt: float) -> str:
         <coordinates>{last['lon']:.6f},{last['lat']:.6f},0</coordinates>
       </Point></Placemark>
     <Placemark><name>Apogee ({int(apex['alt'])} m)</name><styleUrl>#apex</styleUrl>
-      <Point><altitudeMode>relativeToGround</altitudeMode>
+      <Point><altitudeMode>absolute</altitudeMode>
         <coordinates>{apex['lon']:.6f},{apex['lat']:.6f},{apex['alt']:.1f}</coordinates>
       </Point></Placemark>
   </Document>

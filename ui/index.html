@@ -78,14 +78,14 @@
       <button id="btnPinGps" class="btn sm ghost" title="Paste a GPS coordinate to track distance from payload">Pin GPS Target</button>
       <div style="display:flex; align-items:center; gap:6px;">
         <span class="k" style="font-size:11px;">Dist to Pin:</span>
-        <span id="pinnedDistDisplay" class="v" style="font-size:16px; font-weight:700; color:var(--accent);">\u2014</span>
+        <span id="pinnedDistDisplay" class="v" style="font-size:16px; font-weight:700; color:var(--accent);">&mdash;</span>
       </div>
     </div>
     <div class="compass-container">
       <div class="compass">
         <div class="compass-arrow" id="compassArrow"></div>
       </div>
-      <div class="heading-text" id="heading">--\u00b0</div>
+      <div class="heading-text" id="heading">--&deg;</div>
     </div>
     <div class="kv-major">
       <div class="k">RX Packets</div>
@@ -112,7 +112,7 @@
     <!-- MAP (Right Column, Top) -->
     <section class="panel map-panel">
       <div class="panel-title">
-        <div>GPS LOCATION <span id="gpsMiniTitle" class="gpsmini">\u2014, \u2014 \u2022 sats: \u2014</span></div>
+        <div>GPS LOCATION <span id="gpsMiniTitle" class="gpsmini">&mdash;, &mdash; &bull; sats: &mdash;</span></div>
         <div class="missionbar">
           <button id="btnStartMission" class="btn primary sm">Start Mission</button>
           <button id="toggleMapSize" class="btn sm ghost" title="Switch between 3D and 2D map">Map Toggle</button>
@@ -140,23 +140,21 @@
           <div id="chart-power"></div>
         </div>
         <div class="chartbox">
-          <div class="charttitle">Acceleration (m/s\u00b2)</div>
+          <div class="charttitle">Acceleration (m/s&sup2;)</div>
           <div id="chart-accel"></div>
         </div>
         <div class="chartbox">
-          <div class="charttitle">Gyroscope (\u00b0/s)</div>
+          <div class="charttitle">Gyroscope (&deg;/s)</div>
           <div id="chart-gyro"></div>
         </div>
       </div>
-
-
 
       <!-- Key Values Grid -->
       <div class="panel-title">KEY VALUES</div>
       <div class="values-grid">
         <div class="kv-cell">
           <div class="k">Temperature</div>
-          <div id="val_temp" class="v">-- \u00b0C</div>
+          <div id="val_temp" class="v">-- &deg;C</div>
         </div>
         <div class="kv-cell">
           <div class="k">Pressure</div>
@@ -197,7 +195,7 @@
         </div>
 
         <div class="kv-group">
-          <div class="k">Accel (m/s\u00b2)</div>
+          <div class="k">Accel (m/s&sup2;)</div>
           <div class="v-group">
             <span>X: <b id="val_accel_x">--</b></span>
             <span>Y: <b id="val_accel_y">--</b></span>
@@ -215,7 +213,7 @@
         </div>
         <div class="lastcmd">
           <div class="tit">Last Cmd</div>
-          <div id="lastCmd" class="val">\u2014</div>
+          <div id="lastCmd" class="val">&mdash;</div>
         </div>
       </div>
       <div class="logs-content">
@@ -267,7 +265,7 @@
       </div>
       <div class="kv-major-large" style="flex: 1; border-left: 2px solid var(--edge);">
         <div class="k">Walk Heading</div>
-        <div id="recovHeading" class="v" style="font-size: 54px; color: var(--accent);">-- \u00b0</div>
+        <div id="recovHeading" class="v" style="font-size: 54px; color: var(--accent);">-- &deg;</div>
       </div>
     </div>
 
@@ -275,16 +273,6 @@
       <div id="recoveryMap" style="width: 100%; height: 100%; border-radius: 12px; border: 4px solid var(--ok);"></div>
     </div>
   </div>
-
-  <!-- sync small\u2192big time -->
-  <script>
-    (function () {
-      const s = document.getElementById('missionTime'), b = document.getElementById('missionTimeBig');
-      if (!s || !b) return;
-      new MutationObserver(() => { b.textContent = s.textContent.replace('Mission: ', '') })
-        .observe(s, { childList: true, characterData: true, subtree: true });
-    })();
-  </script>
 
   <script>window.DGS_TEAM_ID = 1043;</script>
   <script src="app.js"></script>

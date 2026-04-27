@@ -51,8 +51,8 @@ if (!window.__DGS_BOOTED__) {
       lastSpokenState: null,
       recoveryMap: null,
       recoveryMarker: null,
-      userMarker: null,
-      recoveryRoute: null,
+      gcsMarker: null,
+      recoveryLine: null,
       userLoc: null,
       geoWatchId: undefined,
       lastNavSpeech: 0,
@@ -73,6 +73,7 @@ if (!window.__DGS_BOOTED__) {
       reconnectDelay: 2000,     // current backoff delay (ms); grows on repeated failures
       reconnectTimer: null,     // handle for the pending reconnect setTimeout
       lastChartTs: 0,           // timestamp of last chart push (for 5 Hz throttle)
+      lastSpeedAlt: undefined,  // altitude at the previous speed sample
     };
 
     // ---------- DOM ELEMENTS (Links to HTML items) ----------
@@ -158,6 +159,7 @@ if (!window.__DGS_BOOTED__) {
 
       // Chart Toggles
       altitudeToggles: $("#altitudeToggles"),
+      showRaw: $("#showRaw"),
     };
 
     // ---------- AUDIO (TTS) & MATH HELPERS ----------
@@ -271,13 +273,13 @@ if (!window.__DGS_BOOTED__) {
     }
     setInterval(tickUTC, 1000); tickUTC();
 
-    // Updates the Mission Clock (T+ XX:XX:XX)
+    // Updates the Mission Clock (T+ XX:XX:XX) — header strip only.
+    // missionBig (map panel) is driven exclusively by satellite mission_time in onTelemetry.
     function tickMission() {
       if (!st.t0 || el.freeze?.checked) return;
       const s = Math.floor((Date.now() - st.t0) / 1000);
       const t = `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
       el.missionSmall && (el.missionSmall.textContent = 'Mission: ' + t);
-      el.missionBig && (el.missionBig.textContent = t);
     }
     setInterval(tickMission, 250);
 
@@ -449,7 +451,7 @@ if (!window.__DGS_BOOTED__) {
         if (el.mapEl) el.mapEl.innerHTML = '';
         initLeaflet2D();
         // Restore last known position on 2D map
-        if (st.gps_lat && st.gps_lon && st.marker) {
+        if (st.gps_lat !== null && st.gps_lon !== null && st.marker) {
           st.marker.setLatLng([st.gps_lat, st.gps_lon]);
           st.map?.panTo([st.gps_lat, st.gps_lon]);
         }
@@ -459,7 +461,7 @@ if (!window.__DGS_BOOTED__) {
         if (el.mapEl) el.mapEl.innerHTML = '';
         initCesium3D();
         // If GPS already exists, zoom straight in after init
-        if (st.gps_lat && st.gps_lon) {
+        if (st.gps_lat !== null && st.gps_lon !== null) {
           setTimeout(() => {
             st.cesiumViewer?.camera.flyTo({
               destination: Cesium.Cartesian3.fromDegrees(
@@ -516,7 +518,7 @@ if (!window.__DGS_BOOTED__) {
       <name>Flight Path</name><styleUrl>#path</styleUrl>
       <LineString>
         <extrude>1</extrude><tessellate>1</tessellate>
-        <altitudeMode>relativeToGround</altitudeMode>
+        <altitudeMode>absolute</altitudeMode>
         <coordinates>
           ${coords}
         </coordinates>
@@ -531,7 +533,7 @@ if (!window.__DGS_BOOTED__) {
         <coordinates>${last.lon.toFixed(6)},${last.lat.toFixed(6)},0</coordinates>
       </Point></Placemark>
     <Placemark><name>Apogee (${Math.round(apex.alt)} m)</name><styleUrl>#apex</styleUrl>
-      <Point><altitudeMode>relativeToGround</altitudeMode>
+      <Point><altitudeMode>absolute</altitudeMode>
         <coordinates>${apex.lon.toFixed(6)},${apex.lat.toFixed(6)},${apex.alt.toFixed(1)}</coordinates>
       </Point></Placemark>
   </Document>
@@ -557,8 +559,8 @@ if (!window.__DGS_BOOTED__) {
         console.error("makeMulti: Element not found:", elId);
         return null;
       }
-      console.log("makeMulti: Initializing chart:", elId);
       const inst = echarts.init(elc);
+      inst._data = { labels: [], series: names.map(() => []) }; // cache for fast pushChart
       const colors = getChartColors();
       const { smooth = false, stack = undefined, area = false } = opts;
       const gridColor = getCssVar('--muted');
@@ -611,24 +613,24 @@ if (!window.__DGS_BOOTED__) {
       return inst;
     }
 
-    // Adds new data points to an existing chart
+    // Adds new data points to an existing chart.
+    // Uses a cached _data object to avoid the expensive getOption() deep-clone on every packet.
     function pushChart(inst, label, values) {
-      if (!inst) return;
-      const opt = inst.getOption();
-
-      // Add new X-axis label (Time)
-      opt.xAxis[0].data.push(label);
-
-      // Add new Y-axis values (Data)
+      if (!inst || !inst._data) return;
+      const d = inst._data;
+      d.labels.push(label);
       (Array.isArray(values) ? values : [values]).forEach((v, i) => {
-        if (opt.series[i]) opt.series[i].data.push(v);
+        if (d.series[i]) d.series[i].push(v);
       });
-
-      // Keep chart size fixed (remove old points if too many)
       const max = 120;
-      if (opt.xAxis[0].data.length > max) { opt.xAxis[0].data.shift(); opt.series.forEach(s => s.data.shift()); }
-
-      inst.setOption(opt, false, true);
+      if (d.labels.length > max) {
+        d.labels.shift();
+        d.series.forEach(s => s.shift());
+      }
+      inst.setOption({
+        xAxis: { data: d.labels },
+        series: d.series.map(s => ({ data: s })),
+      }, false, true);
     }
 
     // Updates chart colors when theme changes
@@ -924,9 +926,6 @@ if (!window.__DGS_BOOTED__) {
 
     // ---------- LOGS UI CONTROL ----------
     (function () {
-      // DOM elements
-      el.showRaw = $("#showRaw");
-
       if (!el.rawBox) return;
       const update = () => {
         // Detect if user scrolled up
@@ -943,13 +942,20 @@ if (!window.__DGS_BOOTED__) {
       el.rawBox?.classList.toggle('wrap', el.wrap.checked);
     });
     el.refreshLogs?.addEventListener('click', () => { if (!el.rawBox) return; el.rawBox.innerHTML = ''; info('Log view cleared.'); });
-    el.copyLogs?.addEventListener('click', async () => { if (!el.rawBox) return; await navigator.clipboard.writeText([...(el.rawBox.querySelectorAll('.logline'))].map(n => n.innerText).join('\n')); cmdEcho('Logs copied to clipboard.'); });
+    el.copyLogs?.addEventListener('click', async () => {
+      if (!el.rawBox) return;
+      try {
+        const text = [...el.rawBox.querySelectorAll('.logline')].map(n => n.innerText).join('\n');
+        await navigator.clipboard.writeText(text);
+        cmdEcho('Logs copied to clipboard.');
+      } catch (e) {
+        err(`Copy failed: ${e.message}. Try Ctrl+A, Ctrl+C in the log box.`);
+      }
+    });
     el.resetAll?.addEventListener('click', () => { if (el.rawBox) el.rawBox.innerHTML = ''; Object.values(st.charts).forEach(c => c?.clear()); initCharts(); cmdEcho('UI Reset.'); });
 
     // ---------- COMMANDS (Sending data to satellite) ----------
     const QUICK_COMMANDS = [
-      // Log sessions
-      '/log default',
       // Telemetry
       'CX,ON', 'CX,OFF',
       // State Overrides
@@ -1054,7 +1060,7 @@ if (!window.__DGS_BOOTED__) {
           const errBody = await res.text();
           throw new Error(`HTTP ${res.status}: ${errBody}`);
         }
-        # If successful, we just wait. The satellite will echo the command back later if it got it.
+        // If successful, we just wait. The satellite will echo the command back later if it got it.
       } catch (e) {
         err(`Command failed: ${e.message}`);
       }
@@ -1146,7 +1152,7 @@ if (!window.__DGS_BOOTED__) {
 
       st.ws.onclose = () => {
         st.ws = null;
-        # Exponential backoff: 2 \u2192 3 \u2192 4.5 \u2192 \u2026 capped at 30 s
+        // Exponential backoff: 2 \u2192 3 \u2192 4.5 \u2192 \u2026 capped at 30 s
         const delay = st.reconnectDelay;
         st.reconnectDelay = Math.min(Math.round(st.reconnectDelay * 1.5), 30000);
         err(`Backend disconnected. Retrying in ${(delay / 1000).toFixed(0)} s\u2026`);
@@ -1372,7 +1378,7 @@ if (!window.__DGS_BOOTED__) {
           document.body.addEventListener('touchstart', onFirstClick);
         }
       };
-      # Run immediately instead of waiting 1000ms
+      // Run immediately instead of waiting 1000ms
       setupSpeech();
 
       // [REQ-77] All data shall be shown simultaneously in the ground station GUI (Tabs not allowed)
