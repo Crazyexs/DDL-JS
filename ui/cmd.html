@@ -32,22 +32,20 @@
       background: var(--bg);
       color: var(--text);
       font-family: ui-sans-serif, system-ui, sans-serif;
-      font-size: 13px;
     }
 
     /* ── Header ── */
     header {
+      flex-shrink: 0;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
-      padding: 8px 14px;
+      padding: 7px 14px;
       background: var(--panel);
       border-bottom: 1px solid var(--edge);
-      flex-shrink: 0;
     }
-    .brand { font-size: 14px; font-weight: 700; letter-spacing: .03em; }
-    .brand span { color: var(--muted); font-weight: 400; font-size: 11px; margin-left: 5px; }
+    .brand { font-size: 14px; font-weight: 700; }
+    .brand span { color: var(--muted); font-weight: 400; font-size: 11px; margin-left: 6px; }
 
     #connPill {
       font-size: 10px; font-weight: 700; padding: 3px 9px;
@@ -58,12 +56,12 @@
 
     /* ── Last cmd bar ── */
     #lastBar {
+      flex-shrink: 0;
       padding: 4px 14px;
       background: color-mix(in oklab, var(--panel) 60%, var(--bg));
       border-bottom: 1px solid var(--edge);
       font-size: 11px; color: var(--muted);
       display: flex; gap: 6px; align-items: center;
-      flex-shrink: 0;
     }
     #lastBar b { color: var(--text); font-family: ui-monospace, monospace; }
 
@@ -82,21 +80,20 @@
     #toast.ok  { border-color: var(--ok);  color: var(--ok); }
     #toast.err { border-color: var(--err); color: var(--err); }
 
-    /* ── Main 3-column grid ── */
+    /* ── Full-screen grid ── */
     main {
       flex: 1;
       overflow: hidden;
       display: grid;
       grid-template-columns: 1fr 1.5fr 1fr;
-      grid-template-rows: auto auto auto auto;
+      grid-template-rows: 1fr 1fr 1fr auto;
       grid-template-areas:
         "cx    state  cal"
         "sim   state  mech"
         "gcs   state  mech"
         "man   man    man";
-      gap: 7px;
-      padding: 7px;
-      align-content: start;
+      gap: 6px;
+      padding: 6px;
     }
 
     #card-cx    { grid-area: cx; }
@@ -115,34 +112,43 @@
       overflow: hidden;
       display: flex;
       flex-direction: column;
+      min-height: 0;
     }
     .card-title {
+      flex-shrink: 0;
       padding: 5px 10px;
       font-size: 9px; font-weight: 700;
       letter-spacing: .1em; text-transform: uppercase;
       color: var(--muted);
       background: color-mix(in oklab, var(--edge) 35%, transparent);
       border-bottom: 1px solid var(--edge);
-      flex-shrink: 0;
     }
     .card-body {
-      padding: 7px;
-      display: flex; flex-wrap: wrap; gap: 5px;
       flex: 1;
+      min-height: 0;
+      display: flex;
+      gap: 5px;
+      padding: 6px;
     }
-    .card-body.col { flex-direction: column; }
+    /* default: column (buttons stack vertically) */
+    .card-body { flex-direction: column; }
+    /* row: buttons sit side-by-side and fill height */
+    .card-body.row { flex-direction: row; }
 
     /* ── Buttons ── */
     .btn {
-      display: inline-flex; align-items: center; justify-content: center;
-      height: 34px; padding: 0 12px;
+      flex: 1;
+      display: flex; align-items: center; justify-content: center;
+      min-height: 28px;
+      padding: 4px 8px;
       border: 1.5px solid transparent; border-radius: 6px;
-      font-size: 12px; font-weight: 700; font-family: inherit;
+      font-size: 13px; font-weight: 700; font-family: inherit;
       cursor: pointer; letter-spacing: .02em;
       transition: filter .12s, transform .08s;
       user-select: none; -webkit-tap-highlight-color: transparent;
+      width: 100%;
     }
-    .btn:active { transform: scale(.95); filter: brightness(.8); }
+    .btn:active { transform: scale(.97); filter: brightness(.8); }
 
     .btn.on     { background: var(--ok);     color: #fff; border-color: var(--ok); }
     .btn.off    { background: var(--err);    color: #fff; border-color: var(--err); }
@@ -152,30 +158,71 @@
     .btn.purple { background: var(--purple); color: #fff; border-color: var(--purple); }
     .btn.dim    { background: color-mix(in oklab, var(--edge) 70%, transparent); color: var(--muted); border-color: var(--edge); }
 
-    /* on/off pair fills full width */
-    .pair { display: flex; gap: 5px; width: 100%; }
-    .pair .btn { flex: 1; }
+    /* ── Pair: two/three buttons side-by-side sharing one row ── */
+    .pair {
+      display: flex;
+      gap: 5px;
+      flex: 1;
+      min-height: 0;
+    }
+    /* inside a pair, buttons fill the row naturally (flex:1 already set) */
 
-    /* state grid — 2 columns */
+    /* ── State grid: 2 cols × 4 rows filling the card ── */
     .state-grid {
+      flex: 1;
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 5px; width: 100%;
+      grid-template-rows: repeat(4, 1fr);
+      gap: 5px;
+      min-height: 0;
     }
-    .state-grid .btn { height: 34px; font-size: 11px; }
+    .state-grid .btn { width: 100%; height: 100%; }
 
-    /* mech sub-label */
-    .sub { font-size: 10px; font-weight: 600; color: var(--muted); }
-
-    /* manual input */
-    .man-row { display: flex; gap: 6px; width: 100%; }
-    .man-row input {
-      flex: 1; height: 34px; padding: 0 10px;
-      background: var(--bg); border: 1.5px solid var(--edge);
-      border-radius: 6px; color: var(--text);
-      font-family: ui-monospace, monospace; font-size: 12px; outline: none;
+    /* ── Cal grid: 3 cols × 2 rows ── */
+    .cal-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: 1fr 1fr;
+      gap: 5px;
+      min-height: 0;
     }
-    .man-row input:focus { border-color: var(--accent); }
+    .cal-grid .btn { width: 100%; height: 100%; }
+
+    /* ── Mech groups: label + pair, 3 equal groups ── */
+    .mech-group {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-height: 0;
+    }
+    .sub {
+      flex-shrink: 0;
+      font-size: 9px; font-weight: 700;
+      letter-spacing: .08em; text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* ── Manual card ── */
+    #card-man .card-body { flex-direction: row; align-items: center; }
+    #card-man input {
+      flex: 1;
+      height: 36px; min-height: 36px;
+      padding: 0 10px;
+      background: var(--bg);
+      border: 1.5px solid var(--edge);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: ui-monospace, monospace;
+      font-size: 13px; outline: none;
+    }
+    #card-man input:focus { border-color: var(--accent); }
+    #card-man .btn {
+      flex: none; width: auto;
+      height: 36px; min-height: 36px;
+      padding: 0 18px;
+    }
   </style>
 </head>
 <body>
@@ -188,18 +235,16 @@
 
 <main>
 
-  <!-- CX -->
+  <!-- CX ── single pair fills the card -->
   <div class="card" id="card-cx">
     <div class="card-title">Telemetry (CX)</div>
-    <div class="card-body">
-      <div class="pair">
-        <button class="btn on"  onclick="send('CX,ON')">CX ON</button>
-        <button class="btn off" onclick="send('CX,OFF')">CX OFF</button>
-      </div>
+    <div class="card-body row">
+      <button class="btn on"  onclick="send('CX,ON')">CX ON</button>
+      <button class="btn off" onclick="send('CX,OFF')">CX OFF</button>
     </div>
   </div>
 
-  <!-- STATE -->
+  <!-- STATE ── 2-col × 4-row grid spanning 3 rows -->
   <div class="card" id="card-state">
     <div class="card-title">State Override</div>
     <div class="card-body">
@@ -216,56 +261,64 @@
     </div>
   </div>
 
-  <!-- CAL -->
+  <!-- CAL ── 3-col × 2-row grid -->
   <div class="card" id="card-cal">
     <div class="card-title">Calibration &amp; Reset</div>
     <div class="card-body">
-      <button class="btn blue"  onclick="send('CAL')">CAL</button>
-      <button class="btn off"   onclick="sendConfirm('RESET','Send RESET to satellite?')">RESET</button>
-      <button class="btn ghost" onclick="send('CAL,MAG,START')">MAG START</button>
-      <button class="btn ghost" onclick="send('CAL,NORTH')">CAL NORTH</button>
-      <button class="btn ghost" onclick="send('CAL,MAG,STATUS')">MAG STATUS</button>
-      <button class="btn dim"   onclick="send('CAL,MAG,RESET')">MAG RESET</button>
+      <div class="cal-grid">
+        <button class="btn blue"  onclick="send('CAL')">CAL</button>
+        <button class="btn off"   onclick="sendConfirm('RESET','Send RESET to satellite?')">RESET</button>
+        <button class="btn ghost" onclick="send('CAL,MAG,START')">MAG START</button>
+        <button class="btn ghost" onclick="send('CAL,NORTH')">CAL NORTH</button>
+        <button class="btn ghost" onclick="send('CAL,MAG,STATUS')">MAG STATUS</button>
+        <button class="btn dim"   onclick="send('CAL,MAG,RESET')">MAG RESET</button>
+      </div>
     </div>
   </div>
 
-  <!-- SIM -->
+  <!-- SIM ── 3 buttons side-by-side -->
   <div class="card" id="card-sim">
     <div class="card-title">Simulation</div>
-    <div class="card-body">
+    <div class="card-body row">
       <button class="btn blue"   onclick="send('SIM,ENABLE')">SIM ENABLE</button>
       <button class="btn on"     onclick="send('SIM,ACTIVATE')">SIM ACTIVATE</button>
       <button class="btn off"    onclick="send('SIM,DISABLE')">SIM DISABLE</button>
     </div>
   </div>
 
-  <!-- MECH -->
+  <!-- MECH ── 3 labeled groups spanning 2 rows -->
   <div class="card" id="card-mech">
     <div class="card-title">Mechanical</div>
-    <div class="card-body col">
-      <span class="sub">Payload Release (PL)</span>
-      <div class="pair">
-        <button class="btn on"  onclick="send('MEC,PL,ON')">PL ON</button>
-        <button class="btn off" onclick="send('MEC,PL,OFF')">PL OFF</button>
+    <div class="card-body">
+      <div class="mech-group">
+        <span class="sub">Payload Release (PL)</span>
+        <div class="pair">
+          <button class="btn on"  onclick="send('MEC,PL,ON')">PL ON</button>
+          <button class="btn off" onclick="send('MEC,PL,OFF')">PL OFF</button>
+        </div>
       </div>
-      <span class="sub">Instrument Bay (INS)</span>
-      <div class="pair">
-        <button class="btn on"  onclick="send('MEC,INS,ON')">INS ON</button>
-        <button class="btn off" onclick="send('MEC,INS,OFF')">INS OFF</button>
+      <div class="mech-group">
+        <span class="sub">Instrument Bay (INS)</span>
+        <div class="pair">
+          <button class="btn on"  onclick="send('MEC,INS,ON')">INS ON</button>
+          <button class="btn off" onclick="send('MEC,INS,OFF')">INS OFF</button>
+        </div>
       </div>
-      <span class="sub">Parachute Motor (PAR)</span>
-      <div class="pair">
-        <button class="btn blue"   onclick="send('MEC,PAR,CW')">PAR CW</button>
-        <button class="btn purple" onclick="send('MEC,PAR,ACW')">PAR ACW</button>
-        <button class="btn off"    onclick="send('MEC,PAR,OFF')">PAR OFF</button>
+      <div class="mech-group">
+        <span class="sub">Parachute Motor (PAR)</span>
+        <div class="pair">
+          <button class="btn blue"   onclick="send('MEC,PAR,CW')">PAR CW</button>
+          <button class="btn purple" onclick="send('MEC,PAR,ACW')">PAR ACW</button>
+          <button class="btn off"    onclick="send('MEC,PAR,OFF')">PAR OFF</button>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- GCS LOCAL -->
+  <!-- GCS ── 2 rows -->
   <div class="card" id="card-gcs">
     <div class="card-title">Ground Station (Local)</div>
-    <div class="card-body col">
+    <div class="card-body">
       <div class="pair">
         <button class="btn on"  onclick="localCmd('/dummy.on')">Dummy ON</button>
         <button class="btn off" onclick="localCmd('/dummy.off')">Dummy OFF</button>
@@ -276,15 +329,14 @@
     </div>
   </div>
 
-  <!-- MANUAL -->
+  <!-- MANUAL ── compact bottom bar -->
   <div class="card" id="card-man">
     <div class="card-title">Manual Command</div>
     <div class="card-body">
-      <div class="man-row">
-        <input id="manInput" type="text" placeholder="e.g. CX,ON &nbsp;·&nbsp; SIMP,101325 &nbsp;·&nbsp; /dummy.on"
-          autocomplete="off" autocapitalize="characters" spellcheck="false" />
-        <button class="btn blue" onclick="sendManual()">Send</button>
-      </div>
+      <input id="manInput" type="text"
+        placeholder="e.g.  CX,ON  ·  SIMP,101325  ·  /dummy.on"
+        autocomplete="off" autocapitalize="characters" spellcheck="false" />
+      <button class="btn blue" onclick="sendManual()">Send</button>
     </div>
   </div>
 
@@ -293,12 +345,11 @@
 <div id="toast"></div>
 
 <script>
-  let _toastTimer;
+  let _tt;
   function toast(msg, type = 'ok') {
     const t = document.getElementById('toast');
     t.textContent = msg; t.className = 'show ' + type;
-    clearTimeout(_toastTimer);
-    _toastTimer = setTimeout(() => t.className = '', 2500);
+    clearTimeout(_tt); _tt = setTimeout(() => t.className = '', 2500);
   }
   function setLast(cmd) { document.getElementById('lastCmd').textContent = cmd; }
 
@@ -351,7 +402,6 @@
     if (e.key === 'Enter') sendManual();
   });
 
-  // Health poll
   const pill = document.getElementById('connPill');
   async function checkConn() {
     try {
