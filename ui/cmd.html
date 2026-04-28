@@ -266,7 +266,17 @@
 
 <header>
   <div class="brand">DAEDALUS <span>#1043 — Command Panel</span></div>
-  <div id="connPill">OFFLINE</div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:1px;">
+      <span style="font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);">Current</span>
+      <div id="cmdCurrentBox" style="
+        min-width:72px;text-align:right;
+        font-size:18px;font-weight:800;font-family:ui-monospace,monospace;
+        color:var(--text);letter-spacing:.02em;
+      ">-- A</div>
+    </div>
+    <div id="connPill">OFFLINE</div>
+  </div>
 </header>
 <div id="lastBar">Last sent: <b id="lastCmd">&mdash;</b></div>
 
@@ -361,10 +371,33 @@
   <!-- GCS LOCAL -->
   <div class="card" id="card-gcs">
     <div class="card-title">Ground Station (Local)</div>
+
+    <!-- Current port badge -->
+    <div style="padding:6px 10px;border-bottom:1px solid var(--edge);display:flex;align-items:center;gap:8px;">
+      <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);">Active Port</span>
+      <div id="cmdPortStatus" style="
+        flex:1;padding:4px 10px;border-radius:6px;
+        background:color-mix(in oklab,var(--edge) 55%,transparent);
+        border:1px solid var(--edge);
+        font-size:12px;font-weight:700;font-family:ui-monospace,monospace;
+        color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+      ">--</div>
+    </div>
+
     <div class="card-body col">
       <div class="pair">
         <button class="btn blue" onclick="logSwitch()">Log Switch</button>
         <button class="btn dim"  onclick="localCmd('/log.clear')">Log Clear</button>
+      </div>
+      <div class="pair" style="flex-direction:column;gap:5px;">
+        <div style="display:flex;gap:6px;align-items:center;">
+          <select id="cmdPortSel" style="flex:1;height:38px;padding:0 6px;background:var(--bg);border:1.5px solid var(--edge);border-radius:8px;color:var(--text);font-family:inherit;font-size:12px;"></select>
+          <select id="cmdBaudSel" style="width:88px;height:38px;padding:0 6px;background:var(--bg);border:1.5px solid var(--edge);border-radius:8px;color:var(--text);font-family:inherit;font-size:12px;"></select>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button class="btn ghost" style="height:38px;flex:1;" onclick="refreshPorts()">&#8635; Ports</button>
+          <button class="btn blue"  style="height:38px;flex:2;" onclick="connectPort()">Connect</button>
+        </div>
       </div>
     </div>
   </div>
@@ -483,16 +516,98 @@
     if (e.key === 'Enter') sendManual();
   });
 
-  const pill = document.getElementById('connPill');
+  // ── Serial Port Selector ──
+  function setPortBadge(text, state) {
+    const el = document.getElementById('cmdPortStatus');
+    if (!el) return;
+    el.textContent = text;
+    el.style.color  = state === 'ok'   ? 'var(--ok)'
+                    : state === 'warn' ? 'var(--warn)'
+                    : state === 'err'  ? 'var(--err)'
+                    : 'var(--muted)';
+    el.style.borderColor = state === 'ok'   ? 'var(--ok)'
+                         : state === 'warn' ? 'var(--warn)'
+                         : state === 'err'  ? 'var(--err)'
+                         : 'var(--edge)';
+  }
+
+  async function refreshPorts() {
+    const portSel = document.getElementById('cmdPortSel');
+    const baudSel = document.getElementById('cmdBaudSel');
+    try {
+      const [pr, br, cr] = await Promise.all([
+        fetch('/api/serial/ports'),
+        fetch('/api/serial/bauds'),
+        fetch('/api/serial/config'),
+      ]);
+      const { ports }   = await pr.json();
+      const { presets } = await br.json();
+      const cfg          = await cr.json();
+
+      portSel.innerHTML = ports.length
+        ? ports.map(p => `<option value="${p.port}" ${p.port === cfg.port ? 'selected' : ''}>${p.port} — ${p.info.slice(0, 28)}</option>`).join('')
+        : '<option value="">No ports found</option>';
+
+      baudSel.innerHTML = presets.map(b =>
+        `<option value="${b}" ${b === cfg.baud ? 'selected' : ''}>${b}</option>`
+      ).join('');
+
+      setPortBadge(cfg.port || '--', 'ok');
+    } catch (e) {
+      if (portSel) portSel.innerHTML = '<option>Error</option>';
+      setPortBadge('error', 'err');
+      toast('Port list error: ' + e.message, 'err');
+    }
+  }
+
+  async function connectPort() {
+    const port = document.getElementById('cmdPortSel')?.value;
+    const baud = Number(document.getElementById('cmdBaudSel')?.value);
+    if (!port || !baud) return;
+    try {
+      const r = await fetch('/api/serial/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ port, baud }),
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      toast(`Reconnecting → ${port} @ ${baud}`, 'ok');
+      setPortBadge(`${port} connecting…`, 'warn');
+    } catch (e) {
+      toast('Connect failed: ' + e.message, 'err');
+      setPortBadge('connect failed', 'err');
+    }
+  }
+
+  refreshPorts();
+
+  const pill       = document.getElementById('connPill');
+  const currentBox = document.getElementById('cmdCurrentBox');
+
   async function checkConn() {
     try {
-      const r = await fetch('/api/health', { cache: 'no-store' });
+      const r    = await fetch('/api/health', { cache: 'no-store' });
+      const data = r.ok ? await r.json() : null;
       pill.textContent = r.ok ? 'ONLINE' : 'ERROR';
-      pill.className = r.ok ? 'ok' : '';
-    } catch { pill.textContent = 'OFFLINE'; pill.className = ''; }
+      pill.className   = r.ok ? 'ok' : '';
+
+      if (data && currentBox) {
+        const a = data.current_a;
+        if (a !== null && a !== undefined) {
+          currentBox.textContent = (+a).toFixed(2) + ' A';
+          currentBox.style.color = a > 3.0 ? 'var(--err)' : a > 1.5 ? 'var(--warn)' : 'var(--ok)';
+        } else {
+          currentBox.textContent = '-- A';
+          currentBox.style.color = 'var(--muted)';
+        }
+      }
+    } catch {
+      pill.textContent = 'OFFLINE';
+      pill.className   = '';
+      if (currentBox) { currentBox.textContent = '-- A'; currentBox.style.color = 'var(--muted)'; }
+    }
   }
   checkConn();
-  setInterval(checkConn, 5000);
+  setInterval(checkConn, 2000);
 </script>
 </body>
 </html>

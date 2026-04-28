@@ -217,6 +217,13 @@
         </div>
       </div>
       <div class="logs-content">
+        <div class="cmdrow" id="serialRow" style="align-items:center;">
+          <select id="serialPortSel" class="sel" title="Serial Port" style="min-width:150px;"></select>
+          <select id="serialBaudSel" class="sel" title="Baud Rate" style="min-width:88px;"></select>
+          <button id="btnSerialRefresh" class="btn sm ghost" title="Refresh port list">&#8635;</button>
+          <button id="btnSerialConnect" class="btn sm primary">Connect</button>
+          <span id="serialStatusLabel" style="font-size:11px;color:var(--muted);white-space:nowrap;">● --</span>
+        </div>
         <div class="cmdrow">
           <select id="quickCmd" class="sel wide"></select>
           <input id="manualCmd" class="input grow" placeholder="Manual command... e.g., CX,ON" />

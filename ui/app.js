@@ -160,6 +160,7 @@ if (!window.__DGS_BOOTED__) {
       // Chart Toggles
       altitudeToggles: $("#altitudeToggles"),
       showRaw: $("#showRaw"),
+
     };
 
     // ---------- AUDIO (TTS) & MATH HELPERS ----------
@@ -1133,6 +1134,15 @@ if (!window.__DGS_BOOTED__) {
             if (el.activeLogLabel) el.activeLogLabel.textContent = label;
             cmdEcho(`Log \u2192 ${data.file}`);
             speak(`Log switched to ${label}.`);
+          } else if (data.type === 'serial_status') {
+            const lbl = document.getElementById('serialStatusLabel');
+            if (data.connected) {
+              info(`Serial reconnected on ${data.port}.`);
+              if (lbl) { lbl.textContent = `\u25cf ${data.port}`; lbl.style.color = 'var(--ok)'; }
+            } else {
+              warn(`Serial disconnected from ${data.port}. Auto-reconnecting\u2026`);
+              if (lbl) { lbl.textContent = '\u25cf disconnected'; lbl.style.color = 'var(--err)'; }
+            }
           } else if (data.type !== 'ping') {
             onTelemetry(data); // Process the data!
           }
@@ -1345,6 +1355,65 @@ if (!window.__DGS_BOOTED__) {
       } catch (_) {}
     }
 
+    // ---------- SERIAL PORT SELECTOR ----------
+    async function loadSerialPorts() {
+      const portSel    = document.getElementById('serialPortSel');
+      const baudSel    = document.getElementById('serialBaudSel');
+      const statusLbl  = document.getElementById('serialStatusLabel');
+      if (!portSel || !baudSel) return;
+      try {
+        const [pr, br, cr] = await Promise.all([
+          fetch('/api/serial/ports'),
+          fetch('/api/serial/bauds'),
+          fetch('/api/serial/config'),
+        ]);
+        const { ports }   = await pr.json();
+        const { presets } = await br.json();
+        const cfg          = await cr.json();
+
+        portSel.innerHTML = ports.length
+          ? ports.map(p => `<option value="${p.port}" ${p.port === cfg.port ? 'selected' : ''}>${p.port} — ${p.info.slice(0, 30)}</option>`).join('')
+          : '<option value="">No ports found</option>';
+
+        baudSel.innerHTML = presets.map(b =>
+          `<option value="${b}" ${b === cfg.baud ? 'selected' : ''}>${b}</option>`
+        ).join('');
+
+        if (statusLbl) { statusLbl.textContent = `● ${cfg.port}`; statusLbl.style.color = 'var(--muted)'; }
+      } catch (e) {
+        if (portSel) portSel.innerHTML = '<option value="">Error — server offline?</option>';
+      }
+    }
+
+    function initSerialSelector() {
+      const portSel   = document.getElementById('serialPortSel');
+      const baudSel   = document.getElementById('serialBaudSel');
+      if (!portSel || !baudSel) return;
+
+      loadSerialPorts();
+
+      document.getElementById('btnSerialRefresh')?.addEventListener('click', loadSerialPorts);
+
+      document.getElementById('btnSerialConnect')?.addEventListener('click', async () => {
+        const port = document.getElementById('serialPortSel')?.value;
+        const baud = Number(document.getElementById('serialBaudSel')?.value);
+        if (!port || !baud) return;
+        try {
+          const res = await fetch('/api/serial/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ port, baud }),
+          });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          info(`Serial reconnecting → ${port} @ ${baud}`);
+          const statusLbl = document.getElementById('serialStatusLabel');
+          if (statusLbl) { statusLbl.textContent = `● ${port}`; statusLbl.style.color = 'var(--warn)'; }
+        } catch (e) {
+          err(`Serial config failed: ${e.message}`);
+        }
+      });
+    }
+
     function init() {
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js').catch(() => {});
@@ -1353,6 +1422,7 @@ if (!window.__DGS_BOOTED__) {
       fillCmds();
       initTheme();
       syncLogLabel();
+      initSerialSelector();
 
       // Announce startup health
       const setupSpeech = async () => {

@@ -38,7 +38,7 @@ TEAM_ID = 1043
 # This is the default USB port the computer uses to talk to the radio.
 # On Windows it is usually "COM3", "COM4", etc.
 # On Linux/Mac it looks like "/dev/ttyUSB0".
-DEFAULT_PORT = "/dev/cu.usbserial-A50285BI"
+DEFAULT_PORT = "/dev/cu.usbserial-00000000"
 
 # This is the speed of the connection. Both the radio and computer must match this number.
 DEFAULT_BAUD = 115200
@@ -195,8 +195,42 @@ class GSState:
     # KML auto-save: collect GPS points for Google Earth export
     kml_points: Deque = field(default_factory=lambda: deque(maxlen=3000))  # [{lat, lon, alt, state}]
     kml_max_alt: float = 0.0    # Track max altitude for KML metadata
+    last_current_a: Optional[float] = None  # Most recent current reading (A)
 
 state = GSState()
+
+# ===================== STARTUP SERIAL PORT SELECTION =====================
+def _select_serial_port_at_startup():
+    """Interactive port picker shown once at import time when stdin is a real terminal."""
+    if not sys.stdin.isatty():
+        return
+    ports = sorted(serial.tools.list_ports.comports(), key=lambda p: p.device)
+    print("\n" + "=" * 54)
+    print("  DAEDALUS — SELECT SERIAL PORT")
+    print("=" * 54)
+    if not ports:
+        print("  (No serial ports detected — will retry after server starts)")
+        print("=" * 54 + "\n")
+        return
+    for i, p in enumerate(ports, 1):
+        marker = "  ← current" if p.device == state.cfg.port else ""
+        print(f"  [{i}]  {p.device:<22} {p.description}{marker}")
+    print(f"\n  [Enter]  Keep default ({state.cfg.port})")
+    print("=" * 54)
+    try:
+        raw = input("  Choice: ").strip()
+        if raw:
+            idx = int(raw) - 1
+            if 0 <= idx < len(ports):
+                state.cfg.port = ports[idx].device
+                print(f"  -> Port set to {state.cfg.port}")
+            else:
+                print("  Invalid choice — keeping default.")
+    except (ValueError, EOFError, KeyboardInterrupt):
+        pass
+    print("=" * 54 + "\n")
+
+_select_serial_port_at_startup()
 
 # ===================== KML AUTO-SAVE =====================
 KML_CURRENT = DATA_DIR / f"Flight_{TEAM_ID:04}.kml"
@@ -397,6 +431,10 @@ def serial_read_thread_target(loop):
                 with _serial_lock:
                     _serial_port = ser
                 log_json(event="serial_connected", port=state.cfg.port)
+                asyncio.run_coroutine_threadsafe(
+                    broadcast_ws({"type": "serial_status", "connected": True, "port": state.cfg.port}),
+                    loop
+                )
             except SerialException as e:
                 msg = str(e)
                 if "Access is denied" in msg:
@@ -428,6 +466,10 @@ def serial_read_thread_target(loop):
                 # If connection is lost, clean up
                 with _serial_lock:
                     _serial_port = None
+                asyncio.run_coroutine_threadsafe(
+                    broadcast_ws({"type": "serial_status", "connected": False, "port": state.cfg.port}),
+                    loop
+                )
                 time.sleep(1)
 
         except Exception as e:
@@ -440,6 +482,10 @@ def serial_read_thread_target(loop):
                     except:
                         pass
                     _serial_port = None
+            asyncio.run_coroutine_threadsafe(
+                broadcast_ws({"type": "serial_status", "connected": False, "port": state.cfg.port}),
+                loop
+            )
             time.sleep(1)
 
     # Cleanup when the program stops
@@ -600,6 +646,7 @@ async def handle_telemetry_line(raw: str):
                 await _save_kml()
 
     # 5) Update counters
+    state.last_current_a = parsed_data.get("current_a")
     state.rx_count += 1
     # [REQ-78] Count the number of received packets
     
@@ -879,6 +926,7 @@ async def api_health():
         "csv": str(CSV_CURRENT),
         "rx": {"received": state.rx_count, "lost": state.loss_count},
         "last_cmd": state.last_cmd,
+        "current_a": state.last_current_a,
     }
 
 @app.get("/api/logs")
