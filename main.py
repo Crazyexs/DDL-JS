@@ -26,7 +26,7 @@ import serial.tools.list_ports
 import serial_asyncio
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone
@@ -1135,6 +1135,10 @@ async def ws_telemetry(ws: WebSocket):
         log_json(event="ws_disconnected", client=c_info)
 
 # ---- Static UI ----
+@app.get("/cmd", include_in_schema=False)
+async def cmd_panel():
+    return FileResponse(UI_DIR / "cmd.html")
+
 # Serve the 'ui' folder as a website
 app.mount("/", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
 
