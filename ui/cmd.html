@@ -19,181 +19,163 @@
       --err:    #ef4444;
       --accent: #3b82f6;
       --purple: #8b5cf6;
-      --r: 10px;
+    }
+
+    html, body {
+      height: 100dvh;
+      overflow: hidden;
     }
 
     body {
+      display: flex;
+      flex-direction: column;
       background: var(--bg);
       color: var(--text);
       font-family: ui-sans-serif, system-ui, sans-serif;
-      font-size: 14px;
-      min-height: 100dvh;
+      font-size: 13px;
     }
 
     /* ── Header ── */
     header {
-      position: sticky;
-      top: 0;
-      z-index: 10;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      padding: 10px 16px;
+      gap: 10px;
+      padding: 8px 14px;
       background: var(--panel);
       border-bottom: 1px solid var(--edge);
+      flex-shrink: 0;
     }
-
-    .brand { font-size: 15px; font-weight: 700; letter-spacing: .03em; }
-    .brand span { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
+    .brand { font-size: 14px; font-weight: 700; letter-spacing: .03em; }
+    .brand span { color: var(--muted); font-weight: 400; font-size: 11px; margin-left: 5px; }
 
     #connPill {
-      font-size: 11px;
-      font-weight: 700;
-      padding: 3px 10px;
-      border-radius: 20px;
-      background: var(--err);
-      color: #fff;
-      letter-spacing: .04em;
-      transition: background .3s;
+      font-size: 10px; font-weight: 700; padding: 3px 9px;
+      border-radius: 20px; background: var(--err); color: #fff;
+      letter-spacing: .05em; transition: background .3s;
     }
     #connPill.ok { background: var(--ok); }
 
-    /* ── Toast ── */
-    #toast {
-      position: fixed;
-      bottom: 16px;
-      left: 50%;
-      transform: translateX(-50%) translateY(80px);
-      background: var(--panel);
-      border: 1px solid var(--edge);
-      border-radius: var(--r);
-      padding: 10px 20px;
-      font-size: 13px;
-      font-weight: 600;
-      white-space: nowrap;
-      transition: transform .25s ease, opacity .25s ease;
-      opacity: 0;
-      pointer-events: none;
-      z-index: 100;
-      max-width: 90vw;
-      white-space: normal;
-      text-align: center;
-    }
-    #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
-    #toast.ok   { border-color: var(--ok);   color: var(--ok); }
-    #toast.err  { border-color: var(--err);  color: var(--err); }
-
     /* ── Last cmd bar ── */
     #lastBar {
-      padding: 6px 16px;
+      padding: 4px 14px;
       background: color-mix(in oklab, var(--panel) 60%, var(--bg));
       border-bottom: 1px solid var(--edge);
-      font-size: 11px;
-      color: var(--muted);
-      display: flex;
-      gap: 8px;
-      align-items: center;
+      font-size: 11px; color: var(--muted);
+      display: flex; gap: 6px; align-items: center;
+      flex-shrink: 0;
     }
     #lastBar b { color: var(--text); font-family: ui-monospace, monospace; }
 
-    /* ── Main layout ── */
+    /* ── Toast ── */
+    #toast {
+      position: fixed; bottom: 12px; left: 50%;
+      transform: translateX(-50%) translateY(60px);
+      background: var(--panel); border: 1px solid var(--edge);
+      border-radius: 8px; padding: 8px 18px;
+      font-size: 12px; font-weight: 600;
+      transition: transform .2s, opacity .2s;
+      opacity: 0; pointer-events: none; z-index: 100;
+      max-width: 90vw; text-align: center;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+    #toast.ok  { border-color: var(--ok);  color: var(--ok); }
+    #toast.err { border-color: var(--err); color: var(--err); }
+
+    /* ── Main 3-column grid ── */
     main {
-      padding: 14px 12px 80px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      max-width: 680px;
-      margin: 0 auto;
+      flex: 1;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 1fr 1.5fr 1fr;
+      grid-template-rows: auto auto auto auto;
+      grid-template-areas:
+        "cx    state  cal"
+        "sim   state  mech"
+        "gcs   state  mech"
+        "man   man    man";
+      gap: 7px;
+      padding: 7px;
+      align-content: start;
     }
 
-    /* ── Section card ── */
+    #card-cx    { grid-area: cx; }
+    #card-state { grid-area: state; }
+    #card-cal   { grid-area: cal; }
+    #card-sim   { grid-area: sim; }
+    #card-mech  { grid-area: mech; }
+    #card-gcs   { grid-area: gcs; }
+    #card-man   { grid-area: man; }
+
+    /* ── Cards ── */
     .card {
       background: var(--panel);
       border: 1px solid var(--edge);
-      border-radius: var(--r);
+      border-radius: 8px;
       overflow: hidden;
-    }
-
-    .card-title {
-      padding: 8px 14px;
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: .1em;
-      text-transform: uppercase;
-      color: var(--muted);
-      background: color-mix(in oklab, var(--edge) 40%, transparent);
-      border-bottom: 1px solid var(--edge);
-    }
-
-    .card-body {
-      padding: 12px;
       display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
+      flex-direction: column;
     }
+    .card-title {
+      padding: 5px 10px;
+      font-size: 9px; font-weight: 700;
+      letter-spacing: .1em; text-transform: uppercase;
+      color: var(--muted);
+      background: color-mix(in oklab, var(--edge) 35%, transparent);
+      border-bottom: 1px solid var(--edge);
+      flex-shrink: 0;
+    }
+    .card-body {
+      padding: 7px;
+      display: flex; flex-wrap: wrap; gap: 5px;
+      flex: 1;
+    }
+    .card-body.col { flex-direction: column; }
 
     /* ── Buttons ── */
     .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 5px;
-      height: 44px;
-      padding: 0 16px;
-      border: 1.5px solid transparent;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 700;
-      font-family: inherit;
-      cursor: pointer;
-      transition: filter .15s, transform .1s;
-      user-select: none;
-      -webkit-tap-highlight-color: transparent;
-      letter-spacing: .02em;
+      display: inline-flex; align-items: center; justify-content: center;
+      height: 34px; padding: 0 12px;
+      border: 1.5px solid transparent; border-radius: 6px;
+      font-size: 12px; font-weight: 700; font-family: inherit;
+      cursor: pointer; letter-spacing: .02em;
+      transition: filter .12s, transform .08s;
+      user-select: none; -webkit-tap-highlight-color: transparent;
     }
-    .btn:active { transform: scale(.96); filter: brightness(.85); }
+    .btn:active { transform: scale(.95); filter: brightness(.8); }
 
-    .btn.on    { background: var(--ok);     color: #fff; border-color: var(--ok); }
-    .btn.off   { background: var(--err);    color: #fff; border-color: var(--err); }
-    .btn.blue  { background: var(--accent); color: #fff; border-color: var(--accent); }
-    .btn.warn  { background: var(--warn);   color: #000; border-color: var(--warn); }
-    .btn.ghost { background: transparent;   color: var(--text); border-color: var(--edge); }
-    .btn.purple{ background: var(--purple); color: #fff; border-color: var(--purple); }
-    .btn.dim   { background: color-mix(in oklab, var(--edge) 70%, transparent); color: var(--muted); border-color: var(--edge); }
+    .btn.on     { background: var(--ok);     color: #fff; border-color: var(--ok); }
+    .btn.off    { background: var(--err);    color: #fff; border-color: var(--err); }
+    .btn.blue   { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn.warn   { background: var(--warn);   color: #000; border-color: var(--warn); }
+    .btn.ghost  { background: transparent;   color: var(--text); border-color: var(--edge); }
+    .btn.purple { background: var(--purple); color: #fff; border-color: var(--purple); }
+    .btn.dim    { background: color-mix(in oklab, var(--edge) 70%, transparent); color: var(--muted); border-color: var(--edge); }
 
-    /* grow to fill row for on/off pairs */
-    .pair { display: flex; gap: 8px; width: 100%; }
+    /* on/off pair fills full width */
+    .pair { display: flex; gap: 5px; width: 100%; }
     .pair .btn { flex: 1; }
 
-    /* state grid — 2 per row on narrow screens */
+    /* state grid — 2 columns */
     .state-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-      gap: 8px;
-      width: 100%;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px; width: 100%;
     }
-    .state-grid .btn { height: 48px; font-size: 12px; }
+    .state-grid .btn { height: 34px; font-size: 11px; }
 
-    /* ── Manual command ── */
-    .manual-row {
-      display: flex;
-      gap: 8px;
-      width: 100%;
+    /* mech sub-label */
+    .sub { font-size: 10px; font-weight: 600; color: var(--muted); }
+
+    /* manual input */
+    .man-row { display: flex; gap: 6px; width: 100%; }
+    .man-row input {
+      flex: 1; height: 34px; padding: 0 10px;
+      background: var(--bg); border: 1.5px solid var(--edge);
+      border-radius: 6px; color: var(--text);
+      font-family: ui-monospace, monospace; font-size: 12px; outline: none;
     }
-    .manual-row input {
-      flex: 1;
-      height: 44px;
-      padding: 0 12px;
-      background: var(--bg);
-      border: 1.5px solid var(--edge);
-      border-radius: 8px;
-      color: var(--text);
-      font-family: ui-monospace, monospace;
-      font-size: 13px;
-      outline: none;
-    }
-    .manual-row input:focus { border-color: var(--accent); }
+    .man-row input:focus { border-color: var(--accent); }
   </style>
 </head>
 <body>
@@ -202,13 +184,12 @@
   <div class="brand">DAEDALUS <span>#1043 — Command Panel</span></div>
   <div id="connPill">OFFLINE</div>
 </header>
-
 <div id="lastBar">Last sent: <b id="lastCmd">&mdash;</b></div>
 
 <main>
 
-  <!-- TELEMETRY -->
-  <div class="card">
+  <!-- CX -->
+  <div class="card" id="card-cx">
     <div class="card-title">Telemetry (CX)</div>
     <div class="card-body">
       <div class="pair">
@@ -218,8 +199,8 @@
     </div>
   </div>
 
-  <!-- STATE OVERRIDES -->
-  <div class="card">
+  <!-- STATE -->
+  <div class="card" id="card-state">
     <div class="card-title">State Override</div>
     <div class="card-body">
       <div class="state-grid">
@@ -235,8 +216,8 @@
     </div>
   </div>
 
-  <!-- CALIBRATION & RESET -->
-  <div class="card">
+  <!-- CAL -->
+  <div class="card" id="card-cal">
     <div class="card-title">Calibration &amp; Reset</div>
     <div class="card-body">
       <button class="btn blue"  onclick="send('CAL')">CAL</button>
@@ -248,8 +229,8 @@
     </div>
   </div>
 
-  <!-- SIMULATION -->
-  <div class="card">
+  <!-- SIM -->
+  <div class="card" id="card-sim">
     <div class="card-title">Simulation</div>
     <div class="card-body">
       <button class="btn blue"   onclick="send('SIM,ENABLE')">SIM ENABLE</button>
@@ -258,47 +239,50 @@
     </div>
   </div>
 
-  <!-- MECHANICAL -->
-  <div class="card">
+  <!-- MECH -->
+  <div class="card" id="card-mech">
     <div class="card-title">Mechanical</div>
-    <div class="card-body" style="flex-direction:column;">
-      <div style="font-size:11px;color:var(--muted);font-weight:600;">Payload Release (PL)</div>
+    <div class="card-body col">
+      <span class="sub">Payload Release (PL)</span>
       <div class="pair">
         <button class="btn on"  onclick="send('MEC,PL,ON')">PL ON</button>
         <button class="btn off" onclick="send('MEC,PL,OFF')">PL OFF</button>
       </div>
-      <div style="font-size:11px;color:var(--muted);font-weight:600;margin-top:4px;">Instrument Bay (INS)</div>
+      <span class="sub">Instrument Bay (INS)</span>
       <div class="pair">
         <button class="btn on"  onclick="send('MEC,INS,ON')">INS ON</button>
         <button class="btn off" onclick="send('MEC,INS,OFF')">INS OFF</button>
       </div>
-      <div style="font-size:11px;color:var(--muted);font-weight:600;margin-top:4px;">Parachute Motor (PAR)</div>
+      <span class="sub">Parachute Motor (PAR)</span>
       <div class="pair">
-        <button class="btn blue"  onclick="send('MEC,PAR,CW')">PAR CW</button>
+        <button class="btn blue"   onclick="send('MEC,PAR,CW')">PAR CW</button>
         <button class="btn purple" onclick="send('MEC,PAR,ACW')">PAR ACW</button>
-        <button class="btn off"   onclick="send('MEC,PAR,OFF')">PAR OFF</button>
+        <button class="btn off"    onclick="send('MEC,PAR,OFF')">PAR OFF</button>
       </div>
     </div>
   </div>
 
   <!-- GCS LOCAL -->
-  <div class="card">
+  <div class="card" id="card-gcs">
     <div class="card-title">Ground Station (Local)</div>
-    <div class="card-body" style="flex-direction:column;">
+    <div class="card-body col">
       <div class="pair">
         <button class="btn on"  onclick="localCmd('/dummy.on')">Dummy ON</button>
         <button class="btn off" onclick="localCmd('/dummy.off')">Dummy OFF</button>
       </div>
-      <button class="btn dim" style="width:100%;" onclick="localCmd('/log.clear')">Clear Log Session</button>
+      <div class="pair">
+        <button class="btn dim" onclick="localCmd('/log.clear')">Clear Log Session</button>
+      </div>
     </div>
   </div>
 
   <!-- MANUAL -->
-  <div class="card">
+  <div class="card" id="card-man">
     <div class="card-title">Manual Command</div>
     <div class="card-body">
-      <div class="manual-row">
-        <input id="manInput" type="text" placeholder="e.g. CX,ON or /dummy.on" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+      <div class="man-row">
+        <input id="manInput" type="text" placeholder="e.g. CX,ON &nbsp;·&nbsp; SIMP,101325 &nbsp;·&nbsp; /dummy.on"
+          autocomplete="off" autocapitalize="characters" spellcheck="false" />
         <button class="btn blue" onclick="sendManual()">Send</button>
       </div>
     </div>
@@ -309,34 +293,25 @@
 <div id="toast"></div>
 
 <script>
-  const TEAM_ID = window.DGS_TEAM_ID || 1043;
   let _toastTimer;
-
   function toast(msg, type = 'ok') {
     const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.className = 'show ' + type;
+    t.textContent = msg; t.className = 'show ' + type;
     clearTimeout(_toastTimer);
-    _toastTimer = setTimeout(() => { t.className = ''; }, 2500);
+    _toastTimer = setTimeout(() => t.className = '', 2500);
   }
-
-  function setLastCmd(cmd) {
-    document.getElementById('lastCmd').textContent = cmd;
-  }
+  function setLast(cmd) { document.getElementById('lastCmd').textContent = cmd; }
 
   async function send(cmd) {
-    setLastCmd(cmd);
+    setLast(cmd);
     try {
-      const res = await fetch('/api/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const r = await fetch('/api/command', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cmd }),
       });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
       toast('Sent: ' + cmd, 'ok');
-    } catch (e) {
-      toast('Failed: ' + e.message, 'err');
-    }
+    } catch (e) { toast('Failed: ' + e.message, 'err'); }
   }
 
   async function sendConfirm(cmd, msg) {
@@ -345,13 +320,12 @@
   }
 
   async function localCmd(cmd) {
-    setLastCmd(cmd);
+    setLast(cmd);
     const c = cmd.toLowerCase();
     try {
       if (c === '/log.clear') {
         await fetch('/api/log/set', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ label: '' }),
         });
         toast('Log session cleared', 'ok');
@@ -362,9 +336,7 @@
         await fetch('/api/dummy/stop', { method: 'POST' });
         toast('Dummy data stopped', 'ok');
       }
-    } catch (e) {
-      toast('Failed: ' + e.message, 'err');
-    }
+    } catch (e) { toast('Failed: ' + e.message, 'err'); }
   }
 
   function sendManual() {
@@ -372,26 +344,21 @@
     const v = inp.value.trim();
     if (!v) return;
     inp.value = '';
-    if (v.startsWith('/')) { localCmd(v); } else { send(v); }
+    v.startsWith('/') ? localCmd(v) : send(v);
   }
 
   document.getElementById('manInput').addEventListener('keydown', e => {
     if (e.key === 'Enter') sendManual();
   });
 
-  // ── Connection health poll ──────────────────────────────────────────
+  // Health poll
   const pill = document.getElementById('connPill');
   async function checkConn() {
     try {
       const r = await fetch('/api/health', { cache: 'no-store' });
-      if (r.ok) {
-        pill.textContent = 'ONLINE';
-        pill.className = 'ok';
-      } else throw new Error();
-    } catch {
-      pill.textContent = 'OFFLINE';
-      pill.className = '';
-    }
+      pill.textContent = r.ok ? 'ONLINE' : 'ERROR';
+      pill.className = r.ok ? 'ok' : '';
+    } catch { pill.textContent = 'OFFLINE'; pill.className = ''; }
   }
   checkConn();
   setInterval(checkConn, 5000);
