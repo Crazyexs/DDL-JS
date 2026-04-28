@@ -21,43 +21,41 @@
       --purple: #8b5cf6;
     }
 
-    html, body {
-      height: 100dvh;
-      overflow: hidden;
-    }
-
+    /* ─────────────────────────────────────────────────────────
+       BASE (mobile-first)
+    ───────────────────────────────────────────────────────── */
+    html { background: var(--bg); }
     body {
       display: flex;
       flex-direction: column;
+      min-height: 100dvh;
       background: var(--bg);
       color: var(--text);
       font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 14px;
     }
 
-    /* ── Header ── */
     header {
+      position: sticky; top: 0; z-index: 10;
       flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 7px 14px;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px;
       background: var(--panel);
       border-bottom: 1px solid var(--edge);
     }
-    .brand { font-size: 14px; font-weight: 700; }
-    .brand span { color: var(--muted); font-weight: 400; font-size: 11px; margin-left: 6px; }
+    .brand { font-size: 15px; font-weight: 700; }
+    .brand span { color: var(--muted); font-weight: 400; font-size: 11px; margin-left: 5px; }
 
     #connPill {
-      font-size: 10px; font-weight: 700; padding: 3px 9px;
+      font-size: 10px; font-weight: 700; padding: 4px 10px;
       border-radius: 20px; background: var(--err); color: #fff;
       letter-spacing: .05em; transition: background .3s;
     }
     #connPill.ok { background: var(--ok); }
 
-    /* ── Last cmd bar ── */
     #lastBar {
       flex-shrink: 0;
-      padding: 4px 14px;
+      padding: 5px 14px;
       background: color-mix(in oklab, var(--panel) 60%, var(--bg));
       border-bottom: 1px solid var(--edge);
       font-size: 11px; color: var(--muted);
@@ -67,88 +65,64 @@
 
     /* ── Toast ── */
     #toast {
-      position: fixed; bottom: 12px; left: 50%;
-      transform: translateX(-50%) translateY(60px);
+      position: fixed; bottom: 16px; left: 50%;
+      transform: translateX(-50%) translateY(70px);
       background: var(--panel); border: 1px solid var(--edge);
-      border-radius: 8px; padding: 8px 18px;
-      font-size: 12px; font-weight: 600;
+      border-radius: 8px; padding: 10px 20px;
+      font-size: 13px; font-weight: 600;
       transition: transform .2s, opacity .2s;
-      opacity: 0; pointer-events: none; z-index: 100;
-      max-width: 90vw; text-align: center;
+      opacity: 0; pointer-events: none; z-index: 200;
+      max-width: 92vw; text-align: center;
     }
     #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
     #toast.ok  { border-color: var(--ok);  color: var(--ok); }
     #toast.err { border-color: var(--err); color: var(--err); }
 
-    /* ── Full-screen grid ── */
+    /* ── Mobile main: single column, scrollable ── */
     main {
-      flex: 1;
-      overflow: hidden;
-      display: grid;
-      grid-template-columns: 1fr 1.5fr 1fr;
-      grid-template-rows: 1fr 1fr 1fr auto;
-      grid-template-areas:
-        "cx    state  cal"
-        "sim   state  mech"
-        "gcs   state  mech"
-        "man   man    man";
-      gap: 6px;
-      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 8px 8px 24px;
     }
-
-    #card-cx    { grid-area: cx; }
-    #card-state { grid-area: state; }
-    #card-cal   { grid-area: cal; }
-    #card-sim   { grid-area: sim; }
-    #card-mech  { grid-area: mech; }
-    #card-gcs   { grid-area: gcs; }
-    #card-man   { grid-area: man; }
 
     /* ── Cards ── */
     .card {
       background: var(--panel);
       border: 1px solid var(--edge);
-      border-radius: 8px;
+      border-radius: 10px;
       overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      min-height: 0;
     }
     .card-title {
-      flex-shrink: 0;
-      padding: 5px 10px;
-      font-size: 9px; font-weight: 700;
+      padding: 6px 12px;
+      font-size: 10px; font-weight: 700;
       letter-spacing: .1em; text-transform: uppercase;
       color: var(--muted);
       background: color-mix(in oklab, var(--edge) 35%, transparent);
       border-bottom: 1px solid var(--edge);
     }
     .card-body {
-      flex: 1;
-      min-height: 0;
+      padding: 8px;
       display: flex;
-      gap: 5px;
-      padding: 6px;
+      flex-wrap: wrap;
+      gap: 7px;
     }
-    /* default: column (buttons stack vertically) */
-    .card-body { flex-direction: column; }
-    /* row: buttons sit side-by-side and fill height */
-    .card-body.row { flex-direction: row; }
+    .card-body.col { flex-direction: column; }
+    .card-body.row { flex-direction: row; flex-wrap: nowrap; }
 
-    /* ── Buttons ── */
+    /* ── Buttons (mobile: 50px tall for fat fingers) ── */
     .btn {
-      flex: 1;
       display: flex; align-items: center; justify-content: center;
-      min-height: 28px;
-      padding: 4px 8px;
-      border: 1.5px solid transparent; border-radius: 6px;
-      font-size: 13px; font-weight: 700; font-family: inherit;
+      height: 50px;
+      padding: 0 12px;
+      border: 1.5px solid transparent; border-radius: 8px;
+      font-size: 14px; font-weight: 700; font-family: inherit;
       cursor: pointer; letter-spacing: .02em;
-      transition: filter .12s, transform .08s;
+      transition: filter .12s, transform .1s;
       user-select: none; -webkit-tap-highlight-color: transparent;
-      width: 100%;
+      flex: 1;
     }
-    .btn:active { transform: scale(.97); filter: brightness(.8); }
+    .btn:active { transform: scale(.96); filter: brightness(.8); }
 
     .btn.on     { background: var(--ok);     color: #fff; border-color: var(--ok); }
     .btn.off    { background: var(--err);    color: #fff; border-color: var(--err); }
@@ -158,70 +132,114 @@
     .btn.purple { background: var(--purple); color: #fff; border-color: var(--purple); }
     .btn.dim    { background: color-mix(in oklab, var(--edge) 70%, transparent); color: var(--muted); border-color: var(--edge); }
 
-    /* ── Pair: two/three buttons side-by-side sharing one row ── */
-    .pair {
-      display: flex;
-      gap: 5px;
-      flex: 1;
-      min-height: 0;
-    }
-    /* inside a pair, buttons fill the row naturally (flex:1 already set) */
+    /* pair = side-by-side row filling full width */
+    .pair { display: flex; gap: 7px; width: 100%; }
 
-    /* ── State grid: 2 cols × 4 rows filling the card ── */
+    /* state grid: 2 cols, auto rows */
     .state-grid {
-      flex: 1;
       display: grid;
       grid-template-columns: 1fr 1fr;
-      grid-template-rows: repeat(4, 1fr);
-      gap: 5px;
-      min-height: 0;
+      gap: 7px; width: 100%;
     }
-    .state-grid .btn { width: 100%; height: 100%; }
+    .state-grid .btn { height: 50px; }
 
-    /* ── Cal grid: 3 cols × 2 rows ── */
+    /* cal grid: 3 cols × 2 rows */
     .cal-grid {
-      flex: 1;
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      grid-template-rows: 1fr 1fr;
-      gap: 5px;
-      min-height: 0;
+      gap: 7px; width: 100%;
     }
-    .cal-grid .btn { width: 100%; height: 100%; }
+    .cal-grid .btn { height: 50px; }
 
-    /* ── Mech groups: label + pair, 3 equal groups ── */
-    .mech-group {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      min-height: 0;
-    }
+    /* mech: sub-label + pair grouped */
+    .mech-group { display: flex; flex-direction: column; gap: 5px; width: 100%; }
     .sub {
-      flex-shrink: 0;
-      font-size: 9px; font-weight: 700;
-      letter-spacing: .08em; text-transform: uppercase;
+      font-size: 10px; font-weight: 700;
+      letter-spacing: .07em; text-transform: uppercase;
       color: var(--muted);
     }
 
-    /* ── Manual card ── */
-    #card-man .card-body { flex-direction: row; align-items: center; }
-    #card-man input {
-      flex: 1;
-      height: 36px; min-height: 36px;
-      padding: 0 10px;
+    /* manual row */
+    .man-row { display: flex; gap: 7px; width: 100%; }
+    .man-row input {
+      flex: 1; height: 50px;
+      padding: 0 12px;
       background: var(--bg);
-      border: 1.5px solid var(--edge);
-      border-radius: 6px;
+      border: 1.5px solid var(--edge); border-radius: 8px;
       color: var(--text);
-      font-family: ui-monospace, monospace;
-      font-size: 13px; outline: none;
+      font-family: ui-monospace, monospace; font-size: 13px; outline: none;
     }
-    #card-man input:focus { border-color: var(--accent); }
-    #card-man .btn {
-      flex: none; width: auto;
-      height: 36px; min-height: 36px;
-      padding: 0 18px;
+    .man-row input:focus { border-color: var(--accent); }
+    .man-row .btn { flex: none; width: auto; padding: 0 20px; }
+
+    /* ─────────────────────────────────────────────────────────
+       DESKTOP (≥ 720px): full-screen, 3-column, stretch layout
+    ───────────────────────────────────────────────────────── */
+    @media (min-width: 720px) {
+      html, body { height: 100dvh; overflow: hidden; }
+
+      main {
+        flex: 1;
+        overflow: hidden;
+        display: grid;
+        grid-template-columns: 1fr 1.5fr 1fr;
+        grid-template-rows: 1fr 1fr 1fr auto;
+        grid-template-areas:
+          "cx    state  cal"
+          "sim   state  mech"
+          "gcs   state  mech"
+          "man   man    man";
+        gap: 6px;
+        padding: 6px;
+        flex-direction: unset;
+        flex-wrap: unset;
+      }
+
+      #card-cx    { grid-area: cx; }
+      #card-state { grid-area: state; }
+      #card-cal   { grid-area: cal; }
+      #card-sim   { grid-area: sim; }
+      #card-mech  { grid-area: mech; }
+      #card-gcs   { grid-area: gcs; }
+      #card-man   { grid-area: man; }
+
+      /* cards stretch to fill grid cell */
+      .card { display: flex; flex-direction: column; min-height: 0; }
+      .card-body { flex: 1; min-height: 0; }
+
+      /* buttons stretch — no fixed height on desktop */
+      .btn { height: auto; min-height: 30px; }
+
+      /* pair stretches vertically inside card */
+      .pair { flex: 1; min-height: 0; }
+
+      /* state grid fills card, equal rows */
+      .state-grid {
+        flex: 1; min-height: 0;
+        grid-template-rows: repeat(4, 1fr);
+      }
+      .state-grid .btn { height: 100%; }
+
+      /* cal grid fills card, equal rows */
+      .cal-grid {
+        flex: 1; min-height: 0;
+        grid-template-rows: 1fr 1fr;
+      }
+      .cal-grid .btn { height: 100%; }
+
+      /* mech groups share card height equally */
+      .mech-group { flex: 1; min-height: 0; }
+      .mech-group .pair { flex: 1; min-height: 0; }
+
+      /* gcs pairs each get half the card */
+      #card-gcs .card-body { flex-direction: column; }
+      #card-gcs .pair { flex: 1; }
+
+      /* manual: compact bar */
+      #card-man .card-body { flex-direction: row; align-items: center; flex-wrap: nowrap; }
+      #card-man .man-row { flex: 1; }
+      #card-man .man-row input { height: 36px; }
+      #card-man .man-row .btn { height: 36px; }
     }
   </style>
 </head>
@@ -235,7 +253,7 @@
 
 <main>
 
-  <!-- CX ── single pair fills the card -->
+  <!-- CX -->
   <div class="card" id="card-cx">
     <div class="card-title">Telemetry (CX)</div>
     <div class="card-body row">
@@ -244,7 +262,17 @@
     </div>
   </div>
 
-  <!-- STATE ── 2-col × 4-row grid spanning 3 rows -->
+  <!-- SIM -->
+  <div class="card" id="card-sim">
+    <div class="card-title">Simulation</div>
+    <div class="card-body row">
+      <button class="btn blue"   onclick="send('SIM,ENABLE')">SIM ENABLE</button>
+      <button class="btn on"     onclick="send('SIM,ACTIVATE')">SIM ACTIVATE</button>
+      <button class="btn off"    onclick="send('SIM,DISABLE')">SIM DISABLE</button>
+    </div>
+  </div>
+
+  <!-- STATE -->
   <div class="card" id="card-state">
     <div class="card-title">State Override</div>
     <div class="card-body">
@@ -261,35 +289,10 @@
     </div>
   </div>
 
-  <!-- CAL ── 3-col × 2-row grid -->
-  <div class="card" id="card-cal">
-    <div class="card-title">Calibration &amp; Reset</div>
-    <div class="card-body">
-      <div class="cal-grid">
-        <button class="btn blue"  onclick="send('CAL')">CAL</button>
-        <button class="btn off"   onclick="sendConfirm('RESET','Send RESET to satellite?')">RESET</button>
-        <button class="btn ghost" onclick="send('CAL,MAG,START')">MAG START</button>
-        <button class="btn ghost" onclick="send('CAL,NORTH')">CAL NORTH</button>
-        <button class="btn ghost" onclick="send('CAL,MAG,STATUS')">MAG STATUS</button>
-        <button class="btn dim"   onclick="send('CAL,MAG,RESET')">MAG RESET</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- SIM ── 3 buttons side-by-side -->
-  <div class="card" id="card-sim">
-    <div class="card-title">Simulation</div>
-    <div class="card-body row">
-      <button class="btn blue"   onclick="send('SIM,ENABLE')">SIM ENABLE</button>
-      <button class="btn on"     onclick="send('SIM,ACTIVATE')">SIM ACTIVATE</button>
-      <button class="btn off"    onclick="send('SIM,DISABLE')">SIM DISABLE</button>
-    </div>
-  </div>
-
-  <!-- MECH ── 3 labeled groups spanning 2 rows -->
+  <!-- MECH -->
   <div class="card" id="card-mech">
     <div class="card-title">Mechanical</div>
-    <div class="card-body">
+    <div class="card-body col">
       <div class="mech-group">
         <span class="sub">Payload Release (PL)</span>
         <div class="pair">
@@ -315,10 +318,25 @@
     </div>
   </div>
 
-  <!-- GCS ── 2 rows -->
+  <!-- CAL -->
+  <div class="card" id="card-cal">
+    <div class="card-title">Calibration &amp; Reset</div>
+    <div class="card-body">
+      <div class="cal-grid">
+        <button class="btn blue"  onclick="send('CAL')">CAL</button>
+        <button class="btn off"   onclick="sendConfirm('RESET','Send RESET to satellite?')">RESET</button>
+        <button class="btn ghost" onclick="send('CAL,MAG,START')">MAG START</button>
+        <button class="btn ghost" onclick="send('CAL,NORTH')">CAL NORTH</button>
+        <button class="btn ghost" onclick="send('CAL,MAG,STATUS')">MAG STATUS</button>
+        <button class="btn dim"   onclick="send('CAL,MAG,RESET')">MAG RESET</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GCS LOCAL -->
   <div class="card" id="card-gcs">
     <div class="card-title">Ground Station (Local)</div>
-    <div class="card-body">
+    <div class="card-body col">
       <div class="pair">
         <button class="btn on"  onclick="localCmd('/dummy.on')">Dummy ON</button>
         <button class="btn off" onclick="localCmd('/dummy.off')">Dummy OFF</button>
@@ -329,14 +347,16 @@
     </div>
   </div>
 
-  <!-- MANUAL ── compact bottom bar -->
+  <!-- MANUAL -->
   <div class="card" id="card-man">
     <div class="card-title">Manual Command</div>
     <div class="card-body">
-      <input id="manInput" type="text"
-        placeholder="e.g.  CX,ON  ·  SIMP,101325  ·  /dummy.on"
-        autocomplete="off" autocapitalize="characters" spellcheck="false" />
-      <button class="btn blue" onclick="sendManual()">Send</button>
+      <div class="man-row">
+        <input id="manInput" type="text"
+          placeholder="e.g. CX,ON  ·  SIMP,101325  ·  /dummy.on"
+          autocomplete="off" autocapitalize="characters" spellcheck="false" />
+        <button class="btn blue" onclick="sendManual()">Send</button>
+      </div>
     </div>
   </div>
 
