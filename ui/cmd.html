@@ -159,6 +159,14 @@
       color: var(--muted);
     }
 
+    /* settings grid: 3 cols */
+    .set-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 7px; width: 100%;
+    }
+    .set-grid .btn { height: 50px; font-size: 12px; }
+
     /* manual row */
     .man-row { display: flex; gap: 7px; width: 100%; }
     .man-row input {
@@ -183,11 +191,12 @@
         overflow: hidden;
         display: grid;
         grid-template-columns: 1fr 1.5fr 1fr;
-        grid-template-rows: 1fr 1fr 1fr auto;
+        grid-template-rows: 1fr 1fr 1fr auto auto;
         grid-template-areas:
           "cx    state  cal"
           "sim   state  mech"
           "gcs   state  mech"
+          "set   set    srv"
           "man   man    man";
         gap: 6px;
         padding: 6px;
@@ -201,6 +210,8 @@
       #card-sim   { grid-area: sim; }
       #card-mech  { grid-area: mech; }
       #card-gcs   { grid-area: gcs; }
+      #card-set   { grid-area: set; }
+      #card-srv   { grid-area: srv; }
       #card-man   { grid-area: man; }
 
       /* cards stretch to fill grid cell */
@@ -235,6 +246,14 @@
       #card-gcs .card-body { flex-direction: column; }
       #card-gcs .pair { flex: 1; }
 
+      /* settings grid on desktop: equal-height rows */
+      .set-grid { flex: 1; min-height: 0; grid-template-rows: 1fr 1fr; }
+      .set-grid .btn { height: 100%; }
+
+      /* servo card on desktop */
+      #card-srv .card-body { flex-direction: column; }
+      #card-srv .pair { flex: 1; min-height: 0; }
+
       /* manual: compact bar */
       #card-man .card-body { flex-direction: row; align-items: center; flex-wrap: nowrap; }
       #card-man .man-row { flex: 1; }
@@ -265,10 +284,15 @@
   <!-- SIM -->
   <div class="card" id="card-sim">
     <div class="card-title">Simulation</div>
-    <div class="card-body row">
-      <button class="btn blue"   onclick="send('SIM,ENABLE')">SIM ENABLE</button>
-      <button class="btn on"     onclick="send('SIM,ACTIVATE')">SIM ACTIVATE</button>
-      <button class="btn off"    onclick="send('SIM,DISABLE')">SIM DISABLE</button>
+    <div class="card-body col">
+      <div class="pair">
+        <button class="btn blue"   onclick="send('SIM,ENABLE')">SIM ENABLE</button>
+        <button class="btn on"     onclick="send('SIM,ACTIVATE')">SIM ACTIVATE</button>
+        <button class="btn off"    onclick="send('SIM,DISABLE')">SIM DISABLE</button>
+      </div>
+      <div class="pair">
+        <button class="btn ghost" onclick="sendPrompt('SIMP,','Enter simulated pressure (Pa):')">SIMP,&lt;pressure&gt;</button>
+      </div>
     </div>
   </div>
 
@@ -329,6 +353,7 @@
         <button class="btn ghost" onclick="send('CAL,NORTH')">CAL NORTH</button>
         <button class="btn ghost" onclick="send('CAL,MAG,STATUS')">MAG STATUS</button>
         <button class="btn dim"   onclick="send('CAL,MAG,RESET')">MAG RESET</button>
+        <button class="btn ghost" style="grid-column:span 3" onclick="sendPrompt('CAL,TOF,','Enter VL53L1X calibration distance (mm):')">CAL,TOF,&lt;dist_mm&gt;</button>
       </div>
     </div>
   </div>
@@ -338,11 +363,34 @@
     <div class="card-title">Ground Station (Local)</div>
     <div class="card-body col">
       <div class="pair">
-        <button class="btn on"  onclick="localCmd('/dummy.on')">Dummy ON</button>
-        <button class="btn off" onclick="localCmd('/dummy.off')">Dummy OFF</button>
+        <button class="btn blue" onclick="logSwitch()">Log Switch</button>
+        <button class="btn dim"  onclick="localCmd('/log.clear')">Log Clear</button>
       </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="card" id="card-set">
+    <div class="card-title">Settings (SET)</div>
+    <div class="card-body">
+      <div class="set-grid">
+        <button class="btn ghost" onclick="sendPrompt('SET,MAIN_ALT,',  'Main chute deployment altitude (m):')">MAIN ALT</button>
+        <button class="btn ghost" onclick="sendPrompt('SET,APOGEE_ALT,','Apogee altitude threshold (m):')">APOGEE ALT</button>
+        <button class="btn ghost" onclick="sendPrompt('SET,TX_RATE,',   'Telemetry TX rate (1–10 Hz):')">TX RATE</button>
+        <button class="btn ghost" onclick="sendPrompt('SET,INS_TOF,',   'Instrument ToF threshold (m):')">INS TOF</button>
+        <button class="btn ghost" onclick="sendPrompt('SET,INS_NEAR,',  'Instrument near threshold (m):')">INS NEAR</button>
+        <button class="btn ghost" onclick="sendPrompt('SET,INS_CRIT,',  'Instrument critical threshold (m):')">INS CRIT</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SERVO -->
+  <div class="card" id="card-srv">
+    <div class="card-title">Servo</div>
+    <div class="card-body col">
       <div class="pair">
-        <button class="btn dim" onclick="localCmd('/log.clear')">Clear Log Session</button>
+        <button class="btn purple" onclick="sendPrompt('SERVO,A,','Servo A angle (0–180°):')">SERVO A</button>
+        <button class="btn purple" onclick="sendPrompt('SERVO,B,','Servo B angle (0–180°):')">SERVO B</button>
       </div>
     </div>
   </div>
@@ -392,22 +440,35 @@
 
   async function localCmd(cmd) {
     setLast(cmd);
-    const c = cmd.toLowerCase();
     try {
-      if (c === '/log.clear') {
+      if (cmd.toLowerCase() === '/log.clear') {
         await fetch('/api/log/set', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ label: '' }),
         });
         toast('Log session cleared', 'ok');
-      } else if (c === '/dummy.on') {
-        await fetch('/api/dummy/start', { method: 'POST' });
-        toast('Dummy data started', 'ok');
-      } else if (c === '/dummy.off') {
-        await fetch('/api/dummy/stop', { method: 'POST' });
-        toast('Dummy data stopped', 'ok');
       }
     } catch (e) { toast('Failed: ' + e.message, 'err'); }
+  }
+
+  function sendPrompt(prefix, hint) {
+    const val = prompt(hint);
+    if (val === null || val.trim() === '') return;
+    send(prefix + val.trim());
+  }
+
+  function logSwitch() {
+    const val = prompt('Enter log name (e.g. log1, preflight, run2):');
+    if (val === null) return;
+    const label = val.trim();
+    setLast('/log ' + (label || 'default'));
+    fetch('/api/log/set', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label }),
+    })
+    .then(r => r.json())
+    .then(d => toast(d.ok ? 'Log → ' + (d.label || 'default') : 'Failed', d.ok ? 'ok' : 'err'))
+    .catch(e => toast('Error: ' + e.message, 'err'));
   }
 
   function sendManual() {
