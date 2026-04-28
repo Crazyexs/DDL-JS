@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>DAEDALUS — Command Panel</title>
+  <link rel="icon" href="/assets/daedalus.png" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:     #0d0f14;
+      --panel:  #151820;
+      --edge:   #252a36;
+      --text:   #e8ecf4;
+      --muted:  #6b7280;
+      --ok:     #22c55e;
+      --warn:   #f59e0b;
+      --err:    #ef4444;
+      --accent: #3b82f6;
+      --purple: #8b5cf6;
+      --r: 10px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 14px;
+      min-height: 100dvh;
+    }
+
+    /* ── Header ── */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 16px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--edge);
+    }
+
+    .brand { font-size: 15px; font-weight: 700; letter-spacing: .03em; }
+    .brand span { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
+
+    #connPill {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 20px;
+      background: var(--err);
+      color: #fff;
+      letter-spacing: .04em;
+      transition: background .3s;
+    }
+    #connPill.ok { background: var(--ok); }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--panel);
+      border: 1px solid var(--edge);
+      border-radius: var(--r);
+      padding: 10px 20px;
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      transition: transform .25s ease, opacity .25s ease;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 100;
+      max-width: 90vw;
+      white-space: normal;
+      text-align: center;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+    #toast.ok   { border-color: var(--ok);   color: var(--ok); }
+    #toast.err  { border-color: var(--err);  color: var(--err); }
+
+    /* ── Last cmd bar ── */
+    #lastBar {
+      padding: 6px 16px;
+      background: color-mix(in oklab, var(--panel) 60%, var(--bg));
+      border-bottom: 1px solid var(--edge);
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    #lastBar b { color: var(--text); font-family: ui-monospace, monospace; }
+
+    /* ── Main layout ── */
+    main {
+      padding: 14px 12px 80px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      max-width: 680px;
+      margin: 0 auto;
+    }
+
+    /* ── Section card ── */
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--edge);
+      border-radius: var(--r);
+      overflow: hidden;
+    }
+
+    .card-title {
+      padding: 8px 14px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      background: color-mix(in oklab, var(--edge) 40%, transparent);
+      border-bottom: 1px solid var(--edge);
+    }
+
+    .card-body {
+      padding: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      height: 44px;
+      padding: 0 16px;
+      border: 1.5px solid transparent;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      transition: filter .15s, transform .1s;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      letter-spacing: .02em;
+    }
+    .btn:active { transform: scale(.96); filter: brightness(.85); }
+
+    .btn.on    { background: var(--ok);     color: #fff; border-color: var(--ok); }
+    .btn.off   { background: var(--err);    color: #fff; border-color: var(--err); }
+    .btn.blue  { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn.warn  { background: var(--warn);   color: #000; border-color: var(--warn); }
+    .btn.ghost { background: transparent;   color: var(--text); border-color: var(--edge); }
+    .btn.purple{ background: var(--purple); color: #fff; border-color: var(--purple); }
+    .btn.dim   { background: color-mix(in oklab, var(--edge) 70%, transparent); color: var(--muted); border-color: var(--edge); }
+
+    /* grow to fill row for on/off pairs */
+    .pair { display: flex; gap: 8px; width: 100%; }
+    .pair .btn { flex: 1; }
+
+    /* state grid — 2 per row on narrow screens */
+    .state-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 8px;
+      width: 100%;
+    }
+    .state-grid .btn { height: 48px; font-size: 12px; }
+
+    /* ── Manual command ── */
+    .manual-row {
+      display: flex;
+      gap: 8px;
+      width: 100%;
+    }
+    .manual-row input {
+      flex: 1;
+      height: 44px;
+      padding: 0 12px;
+      background: var(--bg);
+      border: 1.5px solid var(--edge);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: ui-monospace, monospace;
+      font-size: 13px;
+      outline: none;
+    }
+    .manual-row input:focus { border-color: var(--accent); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="brand">DAEDALUS <span>#1043 — Command Panel</span></div>
+  <div id="connPill">OFFLINE</div>
+</header>
+
+<div id="lastBar">Last sent: <b id="lastCmd">&mdash;</b></div>
+
+<main>
+
+  <!-- TELEMETRY -->
+  <div class="card">
+    <div class="card-title">Telemetry (CX)</div>
+    <div class="card-body">
+      <div class="pair">
+        <button class="btn on"  onclick="send('CX,ON')">CX ON</button>
+        <button class="btn off" onclick="send('CX,OFF')">CX OFF</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATE OVERRIDES -->
+  <div class="card">
+    <div class="card-title">State Override</div>
+    <div class="card-body">
+      <div class="state-grid">
+        <button class="btn blue"  onclick="send('STATE,IDLE_SAFE')">IDLE SAFE</button>
+        <button class="btn blue"  onclick="send('STATE,LAUNCH_PAD')">LAUNCH PAD</button>
+        <button class="btn blue"  onclick="send('STATE,ASCENT')">ASCENT</button>
+        <button class="btn warn"  onclick="send('STATE,APOGEE')">APOGEE</button>
+        <button class="btn warn"  onclick="send('STATE,DESCENT')">DESCENT</button>
+        <button class="btn warn"  onclick="send('STATE,PROBE_REALEASE')">PROBE REL.</button>
+        <button class="btn warn"  onclick="send('STATE,PAYLOAD_REALEASE')">PAYLOAD REL.</button>
+        <button class="btn ghost" onclick="send('STATE,LANDED')">LANDED</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CALIBRATION & RESET -->
+  <div class="card">
+    <div class="card-title">Calibration &amp; Reset</div>
+    <div class="card-body">
+      <button class="btn blue"  onclick="send('CAL')">CAL</button>
+      <button class="btn off"   onclick="sendConfirm('RESET','Send RESET to satellite?')">RESET</button>
+      <button class="btn ghost" onclick="send('CAL,MAG,START')">MAG START</button>
+      <button class="btn ghost" onclick="send('CAL,NORTH')">CAL NORTH</button>
+      <button class="btn ghost" onclick="send('CAL,MAG,STATUS')">MAG STATUS</button>
+      <button class="btn dim"   onclick="send('CAL,MAG,RESET')">MAG RESET</button>
+    </div>
+  </div>
+
+  <!-- SIMULATION -->
+  <div class="card">
+    <div class="card-title">Simulation</div>
+    <div class="card-body">
+      <button class="btn blue"   onclick="send('SIM,ENABLE')">SIM ENABLE</button>
+      <button class="btn on"     onclick="send('SIM,ACTIVATE')">SIM ACTIVATE</button>
+      <button class="btn off"    onclick="send('SIM,DISABLE')">SIM DISABLE</button>
+    </div>
+  </div>
+
+  <!-- MECHANICAL -->
+  <div class="card">
+    <div class="card-title">Mechanical</div>
+    <div class="card-body" style="flex-direction:column;">
+      <div style="font-size:11px;color:var(--muted);font-weight:600;">Payload Release (PL)</div>
+      <div class="pair">
+        <button class="btn on"  onclick="send('MEC,PL,ON')">PL ON</button>
+        <button class="btn off" onclick="send('MEC,PL,OFF')">PL OFF</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);font-weight:600;margin-top:4px;">Instrument Bay (INS)</div>
+      <div class="pair">
+        <button class="btn on"  onclick="send('MEC,INS,ON')">INS ON</button>
+        <button class="btn off" onclick="send('MEC,INS,OFF')">INS OFF</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);font-weight:600;margin-top:4px;">Parachute Motor (PAR)</div>
+      <div class="pair">
+        <button class="btn blue"  onclick="send('MEC,PAR,CW')">PAR CW</button>
+        <button class="btn purple" onclick="send('MEC,PAR,ACW')">PAR ACW</button>
+        <button class="btn off"   onclick="send('MEC,PAR,OFF')">PAR OFF</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GCS LOCAL -->
+  <div class="card">
+    <div class="card-title">Ground Station (Local)</div>
+    <div class="card-body" style="flex-direction:column;">
+      <div class="pair">
+        <button class="btn on"  onclick="localCmd('/dummy.on')">Dummy ON</button>
+        <button class="btn off" onclick="localCmd('/dummy.off')">Dummy OFF</button>
+      </div>
+      <button class="btn dim" style="width:100%;" onclick="localCmd('/log.clear')">Clear Log Session</button>
+    </div>
+  </div>
+
+  <!-- MANUAL -->
+  <div class="card">
+    <div class="card-title">Manual Command</div>
+    <div class="card-body">
+      <div class="manual-row">
+        <input id="manInput" type="text" placeholder="e.g. CX,ON or /dummy.on" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+        <button class="btn blue" onclick="sendManual()">Send</button>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+  const TEAM_ID = window.DGS_TEAM_ID || 1043;
+  let _toastTimer;
+
+  function toast(msg, type = 'ok') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'show ' + type;
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => { t.className = ''; }, 2500);
+  }
+
+  function setLastCmd(cmd) {
+    document.getElementById('lastCmd').textContent = cmd;
+  }
+
+  async function send(cmd) {
+    setLastCmd(cmd);
+    try {
+      const res = await fetch('/api/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cmd }),
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      toast('Sent: ' + cmd, 'ok');
+    } catch (e) {
+      toast('Failed: ' + e.message, 'err');
+    }
+  }
+
+  async function sendConfirm(cmd, msg) {
+    if (!confirm(msg)) return;
+    await send(cmd);
+  }
+
+  async function localCmd(cmd) {
+    setLastCmd(cmd);
+    const c = cmd.toLowerCase();
+    try {
+      if (c === '/log.clear') {
+        await fetch('/api/log/set', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label: '' }),
+        });
+        toast('Log session cleared', 'ok');
+      } else if (c === '/dummy.on') {
+        await fetch('/api/dummy/start', { method: 'POST' });
+        toast('Dummy data started', 'ok');
+      } else if (c === '/dummy.off') {
+        await fetch('/api/dummy/stop', { method: 'POST' });
+        toast('Dummy data stopped', 'ok');
+      }
+    } catch (e) {
+      toast('Failed: ' + e.message, 'err');
+    }
+  }
+
+  function sendManual() {
+    const inp = document.getElementById('manInput');
+    const v = inp.value.trim();
+    if (!v) return;
+    inp.value = '';
+    if (v.startsWith('/')) { localCmd(v); } else { send(v); }
+  }
+
+  document.getElementById('manInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') sendManual();
+  });
+
+  // ── Connection health poll ──────────────────────────────────────────
+  const pill = document.getElementById('connPill');
+  async function checkConn() {
+    try {
+      const r = await fetch('/api/health', { cache: 'no-store' });
+      if (r.ok) {
+        pill.textContent = 'ONLINE';
+        pill.className = 'ok';
+      } else throw new Error();
+    } catch {
+      pill.textContent = 'OFFLINE';
+      pill.className = '';
+    }
+  }
+  checkConn();
+  setInterval(checkConn, 5000);
+</script>
+</body>
+</html>
