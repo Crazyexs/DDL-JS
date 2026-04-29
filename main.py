@@ -366,13 +366,13 @@ def _build_kml(points: list, max_alt: float) -> str:
 
 async def _save_kml():
     """Writes the current KML data to disk."""
-    kml_str = _build_kml(state.kml_points, state.kml_max_alt)
-    if kml_str:
-        try:
+    try:
+        kml_str = _build_kml(state.kml_points, state.kml_max_alt)
+        if kml_str:
             async with aiofiles.open(get_active_kml(), "w", encoding="utf-8") as f:
                 await f.write(kml_str)
-        except Exception as e:
-            log_json(level="error", event="kml_save_failed", error=str(e))
+    except Exception as e:
+        log_json(level="error", event="kml_save_failed", error=str(e))
 
 ring: Deque[str] = deque(maxlen=10_000)   # Keeps the last 10,000 log messages in memory
 ws_clients: Set[WebSocket] = set()        # A list of all web browsers currently connected
@@ -1059,35 +1059,39 @@ async def api_log_set(body: LogBody):
     Send {"label": "log1"} to start writing to Flight_1043_log1.csv.
     Send {"label": ""} to return to the default Flight_1043.csv.
     """
-    # Sanitize: alphanumeric, underscore, hyphen only; max 32 chars
-    raw = body.label.strip().replace(" ", "_")
-    label = re.sub(r"[^a-zA-Z0-9_\-]", "", raw)[:32]
+    try:
+        # Sanitize: alphanumeric, underscore, hyphen only; max 32 chars
+        raw = body.label.strip().replace(" ", "_")
+        label = re.sub(r"[^a-zA-Z0-9_\-]", "", raw)[:32]
 
-    # Save the current session's KML before switching so no data is lost
-    await _save_kml()
+        # Save the current session's KML before switching so no data is lost
+        await _save_kml()
 
-    state.log_label = label
+        state.log_label = label
 
-    # Create the new CSV with a header if it doesn't exist yet
-    new_csv = get_active_csv()
-    ensure_csv_header(new_csv)
+        # Create the new CSV with a header if it doesn't exist yet
+        new_csv = get_active_csv()
+        ensure_csv_header(new_csv)
 
-    # Reset KML state so this log gets its own flight path
-    state.kml_points.clear()
-    state.kml_max_alt = 0.0
+        # Reset KML state so this log gets its own flight path
+        state.kml_points.clear()
+        state.kml_max_alt = 0.0
 
-    # Reset packet-loss tracking so a satellite restart doesn't skew counters
-    state.last_pkt = None
+        # Reset packet-loss tracking so a satellite restart doesn't skew counters
+        state.last_pkt = None
 
-    display = label or "default"
-    log_json(event="log_switched", label=display, file=str(new_csv))
+        display = label or "default"
+        log_json(event="log_switched", label=display, file=str(new_csv))
 
-    await broadcast_ws({
-        "type": "log_switched",
-        "label": display,
-        "file": new_csv.name,
-    })
-    return {"ok": True, "label": display, "file": str(new_csv)}
+        await broadcast_ws({
+            "type": "log_switched",
+            "label": display,
+            "file": new_csv.name,
+        })
+        return {"ok": True, "label": display, "file": str(new_csv)}
+    except Exception as e:
+        log_json(level="error", event="log_set_failed", error=str(e))
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 # ---- KML download endpoint ----
 @app.get("/api/kml")
@@ -1095,7 +1099,6 @@ async def api_kml_download():
     """Download the auto-saved KML file for the active log session."""
     kml_path = get_active_kml()
     if kml_path.exists():
-        from fastapi.responses import FileResponse
         return FileResponse(
             path=str(kml_path),
             media_type="application/vnd.google-earth.kml+xml",

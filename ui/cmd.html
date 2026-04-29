@@ -499,8 +499,13 @@
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ label }),
     })
-    .then(r => r.json())
-    .then(d => toast(d.ok ? 'Log → ' + (d.label || 'default') : 'Failed', d.ok ? 'ok' : 'err'))
+    .then(r => r.text())
+    .then(text => {
+      try {
+        const d = JSON.parse(text);
+        toast(d.ok ? 'Log → ' + (d.label || 'default') : ('Error: ' + (d.error || 'failed')), d.ok ? 'ok' : 'err');
+      } catch { toast('Server error: ' + text.slice(0, 60), 'err'); }
+    })
     .catch(e => toast('Error: ' + e.message, 'err'));
   }
 

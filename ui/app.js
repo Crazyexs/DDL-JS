@@ -1011,14 +1011,16 @@ if (!window.__DGS_BOOTED__) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ label }),
           })
-            .then(r => r.json())
-            .then(d => {
-              if (d.ok) {
-                const display = d.label || 'default';
-                if (el.activeLogLabel) el.activeLogLabel.textContent = display;
-                info(`Log switched \u2192 ${d.file}`);
-              }
-              else err(`Log switch failed: ${JSON.stringify(d)}`);
+            .then(r => r.text())
+            .then(text => {
+              try {
+                const d = JSON.parse(text);
+                if (d.ok) {
+                  const display = d.label || 'default';
+                  if (el.activeLogLabel) el.activeLogLabel.textContent = display;
+                  info(`Log switched \u2192 ${d.file}`);
+                } else err(`Log switch failed: ${d.error || JSON.stringify(d)}`);
+              } catch { err(`Log switch server error: ${text.slice(0, 80)}`); }
             })
             .catch(e => err(`Log switch error: ${e.message}`));
           return;
@@ -1073,7 +1075,7 @@ if (!window.__DGS_BOOTED__) {
       }
     });
     el.send?.addEventListener('click', () => { const v = (el.manual?.value || '').trim(); if (!v) return; sendCommand(v); if (el.manual) el.manual.value = ''; });
-    el.manual?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.send.click(); } });
+    el.manual?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.send?.click(); } });
 
 
     // ---------- RING-BUFFER REPLAY ----------
