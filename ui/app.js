@@ -51,8 +51,8 @@ if (!window.__DGS_BOOTED__) {
       lastSpokenState: null,
       recoveryMap: null,
       recoveryMarker: null,
-      userMarker: null,
-      recoveryRoute: null,
+      gcsMarker: null,
+      recoveryLine: null,
       userLoc: null,
       geoWatchId: undefined,
       lastNavSpeech: 0,
@@ -64,11 +64,16 @@ if (!window.__DGS_BOOTED__) {
       pinnedLon: null,
       // Calculated physics
       speed: 0,
-      lastTeleTime: 0,
+      lastSpeedMs: 0,       // wall-clock ms of the previous altitude sample
       // Descent / Fall speed tracking
       releaseAlt: null,
-      releaseTime: null,
-      csvRawMode: false,
+      releaseTime: null,    // satellite mission_time seconds when descent started
+      // Resilience
+      isReplaying: false,       // suppress audio/logs during ring-buffer replay
+      reconnectDelay: 2000,     // current backoff delay (ms); grows on repeated failures
+      reconnectTimer: null,     // handle for the pending reconnect setTimeout
+      lastChartTs: 0,           // timestamp of last chart push (for 5 Hz throttle)
+      lastSpeedAlt: undefined,  // altitude at the previous speed sample
     };
 
     // ---------- DOM ELEMENTS (Links to HTML items) ----------
@@ -109,7 +114,7 @@ if (!window.__DGS_BOOTED__) {
       send: $("#sendCmd"),
       // New buttons
       btnOpenCsvFolder: $("#btnOpenCsvFolder"),
-      btnCsvMode: $("#btnCsvMode"),
+      activeLogLabel: $("#activeLogLabel"),
       btnSim: $("#btnSim"),
       btnExportKML: $("#btnExportKML"),
 
@@ -154,6 +159,8 @@ if (!window.__DGS_BOOTED__) {
 
       // Chart Toggles
       altitudeToggles: $("#altitudeToggles"),
+      showRaw: $("#showRaw"),
+
     };
 
     // ---------- AUDIO (TTS) & MATH HELPERS ----------
@@ -187,6 +194,13 @@ if (!window.__DGS_BOOTED__) {
       const voice = voices.find(v => v.lang.includes('en-GB') || v.lang.includes('en-US')) || voices[0];
       if (voice) u.voice = voice;
       window.speechSynthesis.speak(u);
+    }
+
+    // Parse "HH:MM:SS" mission time string → total seconds (null if invalid)
+    function parseMissionSec(hms) {
+      if (!hms || !/^\d\d:\d\d:\d\d$/.test(hms)) return null;
+      const [h, m, s] = hms.split(':').map(Number);
+      return h * 3600 + m * 60 + s;
     }
 
     function calcDistance(lat1, lon1, lat2, lon2) {
@@ -260,13 +274,13 @@ if (!window.__DGS_BOOTED__) {
     }
     setInterval(tickUTC, 1000); tickUTC();
 
-    // Updates the Mission Clock (T+ XX:XX:XX)
+    // Updates the Mission Clock (T+ XX:XX:XX) — header strip only.
+    // missionBig (map panel) is driven exclusively by satellite mission_time in onTelemetry.
     function tickMission() {
       if (!st.t0 || el.freeze?.checked) return;
       const s = Math.floor((Date.now() - st.t0) / 1000);
       const t = `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
       el.missionSmall && (el.missionSmall.textContent = 'Mission: ' + t);
-      el.missionBig && (el.missionBig.textContent = t);
     }
     setInterval(tickMission, 250);
 
@@ -281,7 +295,7 @@ if (!window.__DGS_BOOTED__) {
     function _cesiumSetupEntities(viewer) {
       // CanSat marker — floats at real GPS altitude (no ground clamping)
       st.cesiumMarker = viewer.entities.add({
-        name: 'CanSat #1043',
+        name: `CanSat #${st.teamId}`,
         position: Cesium.Cartesian3.fromDegrees(98.985, 18.788, 0),
         point: {
           pixelSize: 16,
@@ -292,7 +306,7 @@ if (!window.__DGS_BOOTED__) {
         },
         label: {
           text: new Cesium.CallbackProperty(
-            () => `#1043\n${Math.round(st.lastCesiumAlt)} m`, false),
+            () => `#${st.teamId}\n${Math.round(st.lastCesiumAlt)} m`, false),
           font: 'bold 12px monospace',
           fillColor: Cesium.Color.WHITE,
           outlineColor: Cesium.Color.fromCssColorString('#0a0c14'),
@@ -340,7 +354,7 @@ if (!window.__DGS_BOOTED__) {
       });
     }
 
-    // ── 3D mode (requires WiFi) ────────────────────────────────────────
+    // ── 3D mode ── tiles served from SW cache when offline ──────────────
     function initCesium3D() {
       if (!el.mapEl) return;
       Cesium.Ion.defaultAccessToken = '';
@@ -349,7 +363,7 @@ if (!window.__DGS_BOOTED__) {
         baseLayerPicker:      false,
         geocoder:             false,
         homeButton:           false,
-        sceneModePicker:      true,   // 3D / Columbus view / 2D toggle
+        sceneModePicker:      true,
         navigationHelpButton: false,
         animation:            false,
         timeline:             false,
@@ -359,7 +373,6 @@ if (!window.__DGS_BOOTED__) {
       });
       st.cesiumViewer = viewer;
 
-      // Esri World Imagery = Google Earth quality satellite, free, no API key
       viewer.scene.imageryLayers.removeAll();
       viewer.scene.imageryLayers.addImageryProvider(
         new Cesium.UrlTemplateImageryProvider({
@@ -371,7 +384,6 @@ if (!window.__DGS_BOOTED__) {
 
       viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
 
-      // Near-horizontal camera so altitude is visually obvious
       viewer.camera.setView({
         destination: Cesium.Cartesian3.fromDegrees(98.978, 18.781, 1200),
         orientation: {
@@ -382,32 +394,21 @@ if (!window.__DGS_BOOTED__) {
       });
 
       _cesiumSetupEntities(viewer);
-
-      if (el.mapToggle) el.mapToggle.textContent = '→ 2D';  // button shows current action
-
-      // If WiFi drops mid-flight, switch to NaturalEarthII offline fallback
-      window.addEventListener('offline', () => {
-        try {
-          viewer.scene.imageryLayers.removeAll();
-          viewer.scene.imageryLayers.addImageryProvider(
-            new Cesium.TileMapServiceImageryProvider({
-              url: Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII'),
-              fileExtension: 'jpg',
-            })
-          );
-        } catch(e) {}
-      }, { once: true });
+      if (el.mapToggle) el.mapToggle.textContent = '→ 2D';
     }
 
-    // ── 2D mode (offline fallback) ──────────────────────────────────
+    // ── 2D mode (manual toggle) ── tiles served from SW cache when offline ──
     function initLeaflet2D() {
       if (!el.mapEl) return;
       st.map = L.map('map', { zoomControl: true, attributionControl: false })
         .setView([18.788, 98.985], 15);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        { maxZoom: 19 }).addTo(st.map);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+      }).addTo(st.map);
+
       st.marker = L.marker([18.788, 98.985]).addTo(st.map);
-      if (el.mapToggle) el.mapToggle.textContent = '→ 3D';  // button shows current action
+      if (el.mapToggle) el.mapToggle.textContent = '→ 3D';
     }
 
     // ── Raspberry Pi: always 2D Leaflet only (no Cesium/3D) ─────────────
@@ -427,7 +428,7 @@ if (!window.__DGS_BOOTED__) {
         if (el.mapEl) el.mapEl.innerHTML = '';
         initLeaflet2D();
         // Restore last known position on 2D map
-        if (st.gps_lat && st.gps_lon && st.marker) {
+        if (st.gps_lat !== null && st.gps_lon !== null && st.marker) {
           st.marker.setLatLng([st.gps_lat, st.gps_lon]);
           st.map?.panTo([st.gps_lat, st.gps_lon]);
         }
@@ -437,7 +438,7 @@ if (!window.__DGS_BOOTED__) {
         if (el.mapEl) el.mapEl.innerHTML = '';
         initCesium3D();
         // If GPS already exists, zoom straight in after init
-        if (st.gps_lat && st.gps_lon) {
+        if (st.gps_lat !== null && st.gps_lon !== null) {
           setTimeout(() => {
             st.cesiumViewer?.camera.flyTo({
               destination: Cesium.Cartesian3.fromDegrees(
@@ -453,28 +454,6 @@ if (!window.__DGS_BOOTED__) {
     // ── KML export (Google Earth 3D flight path) ──────────────────────
     // Triggered automatically when the CanSat LANDS, or manually via button.
     
-    el.btnCsvMode?.addEventListener('click', async () => {
-      const newMode = !st.csvRawMode;
-      try {
-        const res = await fetch('/api/csv/mode', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ raw: newMode })
-        });
-        const data = await res.json();
-        if (data.ok) {
-          st.csvRawMode = data.raw;
-          if (el.btnCsvMode) {
-            el.btnCsvMode.textContent = st.csvRawMode ? 'CSV: RAW' : 'CSV: CLEAN';
-            el.btnCsvMode.className = st.csvRawMode ? 'btn sm danger' : 'btn sm ghost';
-          }
-          info(`CSV Save Mode: ${st.csvRawMode ? 'RAW (Saving all payload output)' : 'CLEAN (Using config filter)'}`);
-        }
-      } catch (e) {
-        err("Failed to change CSV mode.");
-      }
-    });
-
     el.btnExportKML?.addEventListener('click', () => {
       st.kmlExported = false; // Allow manual re-export
       generateKML();
@@ -557,8 +536,8 @@ if (!window.__DGS_BOOTED__) {
         console.error("makeMulti: Element not found:", elId);
         return null;
       }
-      console.log("makeMulti: Initializing chart:", elId);
       const inst = echarts.init(elc);
+      inst._data = { labels: [], series: names.map(() => []) }; // cache for fast pushChart
       const colors = getChartColors();
       const { smooth = false, stack = undefined, area = false } = opts;
       const gridColor = getCssVar('--muted');
@@ -611,24 +590,24 @@ if (!window.__DGS_BOOTED__) {
       return inst;
     }
 
-    // Adds new data points to an existing chart
+    // Adds new data points to an existing chart.
+    // Uses a cached _data object to avoid the expensive getOption() deep-clone on every packet.
     function pushChart(inst, label, values) {
-      if (!inst) return;
-      const opt = inst.getOption();
-
-      // Add new X-axis label (Time)
-      opt.xAxis[0].data.push(label);
-
-      // Add new Y-axis values (Data)
+      if (!inst || !inst._data) return;
+      const d = inst._data;
+      d.labels.push(label);
       (Array.isArray(values) ? values : [values]).forEach((v, i) => {
-        if (opt.series[i]) opt.series[i].data.push(v);
+        if (d.series[i]) d.series[i].push(v);
       });
-
-      // Keep chart size fixed (remove old points if too many)
       const max = 120;
-      if (opt.xAxis[0].data.length > max) { opt.xAxis[0].data.shift(); opt.series.forEach(s => s.data.shift()); }
-
-      inst.setOption(opt, false, true);
+      if (d.labels.length > max) {
+        d.labels.shift();
+        d.series.forEach(s => s.shift());
+      }
+      inst.setOption({
+        xAxis: { data: d.labels },
+        series: d.series.map(s => ({ data: s })),
+      }, false, true);
     }
 
     // Updates chart colors when theme changes
@@ -687,15 +666,20 @@ if (!window.__DGS_BOOTED__) {
     function onTelemetry(t) {
       if (el.freeze?.checked) return; // Stop updating if "Freeze" is checked
 
+      // If the payload sent something that doesn't match the telemetry format, just print it!
+      if (t.bad_line !== undefined) {
+        log('info', t.bad_line);
+        return;
+      }
+
       // --- AUDIO & ALTITUDE TRACKING ---
       if (typeof t.altitude_m === 'number') {
         if (t.altitude_m > st.maxAlt) st.maxAlt = t.altitude_m;
       }
 
       if (t.state && t.state.trim() !== '' && t.state !== st.lastSpokenState) {
-        if (st.lastSpokenState !== null) { // Only speak on changes, not on initial boot spam
+        if (st.lastSpokenState !== null && !st.isReplaying) {
           if (t.state === 'LANDED') {
-            const timeStr = (t.mission_time || '').replace(/:/g, ' ');
             speak(`Mission Successful. Highest altitude reached: ${Math.round(st.maxAlt)} meters.`);
             if (el.recoveryGroup) el.recoveryGroup.style.display = 'block';
             generateKML(); // Auto-export 3D flight path for Google Earth
@@ -705,26 +689,32 @@ if (!window.__DGS_BOOTED__) {
         }
         st.lastSpokenState = t.state;
         
-        // Setup Avg Fall Speed Box if we enter Descent phase
-        if (t.state === 'DESCENT' || t.state === 'PAYLOAD_RELEASE') {
-          st.releaseAlt = typeof t.altitude_m === 'number' ? t.altitude_m : 0;
-          st.releaseTime = Date.now();
+        // Setup Avg Fall Speed Box when descent / release begins
+        if (t.state === 'DESCENT' || t.state === 'PAYLOAD_REALEASE' || t.state === 'PAYLOAD_RELEASE') {
+          if (st.releaseAlt == null) {
+            st.releaseAlt  = typeof t.altitude_m === 'number' ? t.altitude_m : 0;
+            st.releaseTime = parseMissionSec(t.mission_time); // satellite clock, TX-rate-agnostic
+          }
           if (el.fallSpeedBox) el.fallSpeedBox.style.display = 'flex';
-        } else if (t.state === 'LAUNCH_PAD') {
-          st.releaseAlt = null;
+        } else if (t.state === 'LAUNCH_PAD' || t.state === 'IDLE_SAFE') {
+          st.releaseAlt  = null;
           st.releaseTime = null;
           if (el.fallSpeedBox) el.fallSpeedBox.style.display = 'none';
         }
       }
 
-      // Calculate avg fall speed during descent
-      if (st.releaseAlt !== null && st.releaseTime !== null) {
-          const dt = (Date.now() - st.releaseTime) / 1000;
-          if (dt > 1 && typeof t.altitude_m === 'number') {
-              const dist = st.releaseAlt - t.altitude_m;
-              const avgFallSpeed = dist / dt;
-              if (el.val_fall_speed) el.val_fall_speed.textContent = `${num(avgFallSpeed, 2)} m/s`;
+      // Avg Fall Speed — uses satellite mission_time clock so it is correct at any TX rate.
+      // dt_sec changes only when mission_time ticks (1 s resolution), which is fine for an average.
+      if (st.releaseAlt != null && st.releaseTime != null && typeof t.altitude_m === 'number') {
+        const currentSec = parseMissionSec(t.mission_time);
+        if (currentSec !== null) {
+          const dt_sec = currentSec - st.releaseTime;
+          if (dt_sec > 0) {
+            const drop = st.releaseAlt - t.altitude_m; // positive = falling
+            const avgFallSpeed = drop / dt_sec;         // true m/s
+            if (el.val_fall_speed) el.val_fall_speed.textContent = `${num(avgFallSpeed, 2)} m/s`;
           }
+        }
       }
 
       // 1. Update Big Text Displays
@@ -743,17 +733,33 @@ if (!window.__DGS_BOOTED__) {
       const voltage = t.voltage_v || 0;
       el.val_voltage && (el.val_voltage.textContent = `${num(voltage, 2)} V`);
       
-      // Calculate 2S Li-ion percentage (Max 8.4V, Min 6.0V)
+      // 2S Li-ion discharge curve lookup (per-cell × 2): non-linear interpolation
+      // Points derived from standard 18650 discharge curve at ~0.5C
+      const LI_ION_2S = [
+        [8.40, 100], [8.20, 95], [8.00, 88], [7.80, 78],
+        [7.60, 63],  [7.40, 48], [7.20, 32], [7.00, 18],
+        [6.80, 9],   [6.60, 4],  [6.40, 1],  [6.00, 0],
+      ];
       let pct = 0;
-      if (voltage >= 8.4) pct = 100;
-      else if (voltage <= 6.0) pct = 0;
-      else pct = ((voltage - 6.0) / 2.4) * 100;
+      if (voltage >= LI_ION_2S[0][0]) {
+        pct = 100;
+      } else if (voltage <= LI_ION_2S[LI_ION_2S.length - 1][0]) {
+        pct = 0;
+      } else {
+        for (let i = 0; i < LI_ION_2S.length - 1; i++) {
+          const [v1, p1] = LI_ION_2S[i], [v2, p2] = LI_ION_2S[i + 1];
+          if (voltage <= v1 && voltage >= v2) {
+            pct = p2 + (p1 - p2) * ((voltage - v2) / (v1 - v2));
+            break;
+          }
+        }
+      }
       
       if (el.val_battery_pct) {
           el.val_battery_pct.textContent = `${num(pct, 0)}%`;
-          if (pct > 50) { el.val_battery_pct.style.color = getCssVar('--ok'); el.battery_bar.style.background = getCssVar('--ok'); }
-          else if (pct > 20) { el.val_battery_pct.style.color = getCssVar('--warn'); el.battery_bar.style.background = getCssVar('--warn'); }
-          else { el.val_battery_pct.style.color = getCssVar('--err'); el.battery_bar.style.background = getCssVar('--err'); }
+          const bColor = pct > 50 ? getCssVar('--ok') : pct > 20 ? getCssVar('--warn') : getCssVar('--err');
+          el.val_battery_pct.style.color = bColor;
+          if (el.battery_bar) el.battery_bar.style.background = bColor;
       }
       if (el.battery_bar) el.battery_bar.style.width = `${pct}%`;
 
@@ -776,20 +782,26 @@ if (!window.__DGS_BOOTED__) {
       const g_force = accel_mag / 9.80665;
       el.val_gforce && (el.val_gforce.textContent = `${num(g_force, 2)} G`);
 
-      const now = Date.now();
-      if (st.lastTeleTime) {
-         const dt = (now - st.lastTeleTime) / 1000;
-         const net_accel = accel_mag - 9.80665;
-         
-         if (Math.abs(net_accel) > 0.15) {
-             st.speed += net_accel * dt;
-         }
-         
-         if (st.speed < 0 || t.state === 'LANDED' || t.state === 'LAUNCH_PAD') {
-             st.speed = 0;
-         }
+      // Instantaneous vertical speed — uses browser wall clock so it is correct at any TX rate.
+      // Minimum 50 ms window prevents division by near-zero on back-to-back packets.
+      const _wallNow = Date.now();
+      if (st.lastSpeedMs > 0 && st.lastSpeedAlt !== undefined && typeof t.altitude_m === 'number') {
+        const dt_sec = (_wallNow - st.lastSpeedMs) / 1000;
+        if (dt_sec >= 0.05) {
+          const raw_speed = Math.abs(t.altitude_m - st.lastSpeedAlt) / dt_sec;
+          st.speed = st.speed * 0.7 + raw_speed * 0.3; // EMA smoothing
+        }
+      } else {
+        st.speed = 0;
       }
-      st.lastTeleTime = now;
+      if (typeof t.altitude_m === 'number') {
+        st.lastSpeedAlt = t.altitude_m;
+        st.lastSpeedMs  = _wallNow;
+      }
+
+      if (t.state === 'LANDED' || t.state === 'LAUNCH_PAD' || t.state === 'IDLE_SAFE') {
+          st.speed = 0;
+      }
       el.val_speed && (el.val_speed.textContent = `${num(st.speed, 2)} m/s`);
 
       // 4. Update Packet Counters
@@ -812,93 +824,101 @@ if (!window.__DGS_BOOTED__) {
 
       // 7. Update Charts
       // [REQ-69] Plot altitude, battery voltage, current, accelerometer, rotation rates in real time
-      const label = t.mission_time || hms();
-      pushChart(st.charts.altitude, label, [t.altitude_m]);
-      pushChart(st.charts.power, label, [t.voltage_v, t.current_a]);
-      pushChart(st.charts.accel, label, [t.accel_r_dps2, t.accel_p_dps2, t.accel_y_dps2]);
-      pushChart(st.charts.gyro, label, [t.gyro_r_dps, t.gyro_p_dps, t.gyro_y_dps]);
+      // During replay: push every packet to restore chart history.
+      // During live:   throttle to 5 Hz so ECharts stays fast at high TX rates (e.g. 10 Hz).
+      const _now = Date.now();
+      if (st.isReplaying || _now - st.lastChartTs >= 200) {
+        const label = t.mission_time || hms();
+        pushChart(st.charts.altitude, label, [t.altitude_m]);
+        pushChart(st.charts.power, label, [t.voltage_v, t.current_a]);
+        pushChart(st.charts.accel, label, [t.accel_r_dps2, t.accel_p_dps2, t.accel_y_dps2]);
+        pushChart(st.charts.gyro, label, [t.gyro_r_dps, t.gyro_p_dps, t.gyro_y_dps]);
+        if (!st.isReplaying) st.lastChartTs = _now;
+      }
 
       // 8. Update 3D Cesium Map & KML Export
-      if (t.gps_lat && t.gps_lon && typeof t.gps_lat === 'number' && typeof t.gps_lon === 'number') {
+      if (typeof t.gps_lat === 'number' && typeof t.gps_lon === 'number' && (t.gps_lat !== 0 || t.gps_lon !== 0)) {
         const lat = t.gps_lat, lon = t.gps_lon;
         const alt = typeof t.altitude_m === 'number' ? Math.max(0, t.altitude_m) : 0;
         
         // Update UI text regardless of satellite count
-        el.gpsMini && (el.gpsMini.textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)} • sats: ${t.gps_sats ?? '—'}`);
+        el.gpsMini && (el.gpsMini.textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)} \u2022 sats: ${t.gps_sats ?? '\u2014'}`);
         el.gmapA && (el.gmapA.href = `https://maps.google.com/?q=${lat},${lon}`);
 
         // Only plot coordinates when we have a solid GPS 3D fix (> 3 sats)
         if (Number(t.gps_sats) > 3) {
+          // Always update the position state \u2014 map will snap here when live data arrives
           st.gps_lat = lat;
           st.gps_lon = lon;
           st.lastCesiumAlt = alt;
 
-          if (st.cesiumViewer) {
-            // 3D mode: marker floats at real GPS altitude
-            const pos3d = Cesium.Cartesian3.fromDegrees(lon, lat, alt);
-            if (st.cesiumMarker) {
-              st.cesiumMarker.position = new Cesium.ConstantPositionProperty(pos3d);
+          // Skip expensive map rendering during replay; let live data handle it
+          if (!st.isReplaying) {
+            if (st.cesiumViewer) {
+              // 3D mode: marker floats at real GPS altitude
+              const pos3d = Cesium.Cartesian3.fromDegrees(lon, lat, alt);
+              if (st.cesiumMarker) {
+                st.cesiumMarker.position = new Cesium.ConstantPositionProperty(pos3d);
+              }
+              st.flightPath.push(pos3d);
+              if (st.flightPath.length > 600) st.flightPath.shift();
+              // Auto-zoom to first GPS fix
+              if (!st.cesiumHasFix) {
+                st.cesiumHasFix = true;
+                st.cesiumViewer.camera.flyTo({
+                  destination: Cesium.Cartesian3.fromDegrees(lon, lat, 1500),
+                  orientation: {
+                    heading: Cesium.Math.toRadians(0),
+                    pitch:   Cesium.Math.toRadians(-30),
+                    roll:    0.0,
+                  },
+                  duration: 2.0,
+                });
+              }
+            } else if (st.map) {
+              // 2D mode: standard Leaflet pan + marker
+              if (st.marker) st.marker.setLatLng([lat, lon]);
+              st.map.panTo([lat, lon], { animate: false });
             }
-            st.flightPath.push(pos3d);
-            if (st.flightPath.length > 600) st.flightPath.shift();
-            // Auto-zoom to first GPS fix
-            if (!st.cesiumHasFix) {
-              st.cesiumHasFix = true;
-              st.cesiumViewer.camera.flyTo({
-                destination: Cesium.Cartesian3.fromDegrees(lon, lat, 1500),
-                orientation: {
-                  heading: Cesium.Math.toRadians(0),
-                  pitch:   Cesium.Math.toRadians(-30),
-                  roll:    0.0,
-                },
-                duration: 2.0,
-              });
-            }
-          } else if (st.map) {
-            // 2D mode: standard Leaflet pan + marker
-            if (st.marker) st.marker.setLatLng([lat, lon]);
-            st.map.panTo([lat, lon], { animate: false });
+
+            // Collect GPS point for KML export (backend already has these; skip during replay)
+            st.kmlPoints.push({ lat, lon, alt });
+            if (st.kmlPoints.length > 2000) st.kmlPoints.shift();
+
+            // Keep recovery overlay marker in sync (Leaflet)
+            if (st.recoveryMarker) st.recoveryMarker.setLatLng([lat, lon]);
           }
 
-          // Collect GPS point for KML export
-          st.kmlPoints.push({ lat, lon, alt });
-          if (st.kmlPoints.length > 2000) st.kmlPoints.shift(); // cap memory
-
-          // Keep recovery overlay marker in sync (Leaflet)
-          if (st.recoveryMarker) st.recoveryMarker.setLatLng([lat, lon]);
-
-          // Update pinned GPS distance
+          // Update pinned GPS distance (cheap text update \u2014 always run)
           updatePinnedDist();
         }
       }
 
-      // 9. Update Text Log (bottom right box)
-      try {
-        const showRaw = el.showRaw?.checked;
-        let logText;
+      // 9. Update Text Log (bottom right box) \u2014 suppressed during replay to avoid flooding
+      if (!st.isReplaying) {
+        try {
+          const showRaw = el.showRaw?.checked;
+          let logText;
 
-        if (showRaw && t.gs_raw_line) {
-          logText = t.gs_raw_line;
-        } else {
-          // Create an "Easy Read" format for the log
-          logText = `#${t.packet_count} ${t.state} | ` +
-            `Alt:${num(t.altitude_m)}m | ` +
-            `Bat:${num(t.voltage_v, 2)}V | ` +
-            `T:${num(t.temperature_c, 1)}C | ` +
-            `P:${num(t.pressure_kpa, 1)}k | ` +
-            (t.cmd_echo ? `Echo:${t.cmd_echo}` : '');
+          if (showRaw && t.gs_raw_line) {
+            logText = t.gs_raw_line;
+          } else {
+            logText = `#${t.packet_count} ${t.state} | ` +
+              `Alt:${num(t.altitude_m)}m | ` +
+              `Bat:${num(t.voltage_v, 2)}V | ` +
+              `T:${num(t.temperature_c, 1)}C | ` +
+              `P:${num(t.pressure_kpa, 1)}k | ` +
+              (t.cmd_echo ? `Echo:${t.cmd_echo}` : '');
+          }
+          log('info', logText);
+        } catch (e) {
+          console.error("Log error:", e);
         }
-        log('info', logText);
-      } catch (e) {
-        console.error("Log error:", e);
       }
     }
 
     // ---------- LOGS UI CONTROL ----------
     (function () {
-      // DOM elements
-      el.showRaw = $("#showRaw");
-
       if (!el.rawBox) return;
       const update = () => {
         // Detect if user scrolled up
@@ -911,8 +931,20 @@ if (!window.__DGS_BOOTED__) {
       const mo = new MutationObserver(() => { if (el.auto?.checked) el.rawBox.scrollTop = el.rawBox.scrollHeight; update(); });
       mo.observe(el.rawBox, { childList: true, subtree: false });
     })();
+    el.wrap?.addEventListener('change', () => {
+      el.rawBox?.classList.toggle('wrap', el.wrap.checked);
+    });
     el.refreshLogs?.addEventListener('click', () => { if (!el.rawBox) return; el.rawBox.innerHTML = ''; info('Log view cleared.'); });
-    el.copyLogs?.addEventListener('click', async () => { if (!el.rawBox) return; await navigator.clipboard.writeText([...(el.rawBox.querySelectorAll('.logline'))].map(n => n.innerText).join('\n')); cmdEcho('Logs copied to clipboard.'); });
+    el.copyLogs?.addEventListener('click', async () => {
+      if (!el.rawBox) return;
+      try {
+        const text = [...el.rawBox.querySelectorAll('.logline')].map(n => n.innerText).join('\n');
+        await navigator.clipboard.writeText(text);
+        cmdEcho('Logs copied to clipboard.');
+      } catch (e) {
+        err(`Copy failed: ${e.message}. Try Ctrl+A, Ctrl+C in the log box.`);
+      }
+    });
     el.resetAll?.addEventListener('click', () => { if (el.rawBox) el.rawBox.innerHTML = ''; Object.values(st.charts).forEach(c => c?.clear()); initCharts(); cmdEcho('UI Reset.'); });
 
     // ---------- COMMANDS (Sending data to satellite) ----------
@@ -926,35 +958,38 @@ if (!window.__DGS_BOOTED__) {
       'CAL', 'RESET', 'CAL,MAG,START', 'CAL,NORTH', 'CAL,MAG,STATUS', 'CAL,MAG,RESET',
       // Simulation
       'SIM,ENABLE', 'SIM,ACTIVATE', 'SIM,DISABLE',
-      // Mechanical — Payload release servo
+      // Mechanical \u2014 Payload release servo
       'MEC,PL,ON', 'MEC,PL,OFF',
-      // Mechanical — Instrument bay servo
+      // Mechanical \u2014 Instrument bay servo
       'MEC,INS,ON', 'MEC,INS,OFF',
-      // Mechanical — Parachute spin motor
+      // Mechanical \u2014 Parachute spin motor
       'MEC,PAR,CW', 'MEC,PAR,ACW', 'MEC,PAR,OFF',
-      // Local GCS only
+      // Log switching (local GCS only \u2014 not sent to satellite)
+      '/log.clear',
+      // Dummy data
       '/dummy.on', '/dummy.off',
     ];
 
     // Commands that require a numeric value typed after the prefix
     const PARAM_COMMANDS = [
+      { prefix: '/log ',            label: '/log <name>',              hint: 'Enter log name (e.g. log1, preflight, run2):' },
       { prefix: 'SIMP,',           label: 'SIMP,<pressure>',          hint: 'Enter simulated pressure (Pa):' },
       { prefix: 'SET,MAIN_ALT,',   label: 'SET,MAIN_ALT,<alt_m>',     hint: 'Enter main chute deployment altitude (m):' },
       { prefix: 'SET,APOGEE_ALT,', label: 'SET,APOGEE_ALT,<alt_m>',   hint: 'Enter apogee altitude threshold (m):' },
-      { prefix: 'SET,TX_RATE,',    label: 'SET,TX_RATE,<1-10>',       hint: 'Enter telemetry TX rate (1–10 Hz):' },
+      { prefix: 'SET,TX_RATE,',    label: 'SET,TX_RATE,<1-10>',       hint: 'Enter telemetry TX rate (1\u201310 Hz):' },
       { prefix: 'SET,INS_TOF,',    label: 'SET,INS_TOF,<val>',       hint: 'Enter instrument ToF threshold (m):' },
       { prefix: 'SET,INS_NEAR,',   label: 'SET,INS_NEAR,<val>',      hint: 'Enter instrument near threshold (m):' },
       { prefix: 'SET,INS_CRIT,',   label: 'SET,INS_CRIT,<val>',      hint: 'Enter instrument critical threshold (m):' },
       { prefix: 'CAL,TOF,',        label: 'CAL,TOF,<dist_mm>',       hint: 'Enter VL53L1X calibration distance (mm):' },
-      { prefix: 'SERVO,A,',        label: 'SERVO,A,<0-180>',          hint: 'Enter servo A angle (0–180):' },
-      { prefix: 'SERVO,B,',        label: 'SERVO,B,<0-180>',          hint: 'Enter servo B angle (0–180):' },
+      { prefix: 'SERVO,A,',        label: 'SERVO,A,<0-180>',          hint: 'Enter servo A angle (0\u2013180):' },
+      { prefix: 'SERVO,B,',        label: 'SERVO,B,<0-180>',          hint: 'Enter servo B angle (0\u2013180):' },
     ];
 
     // Populates the dropdown menu
     function fillCmds() {
       if (!el.quick) return;
       el.quick.innerHTML = '';
-      const opt0 = document.createElement('option'); opt0.value = ''; opt0.textContent = '— Quick Command —';
+      const opt0 = document.createElement('option'); opt0.value = ''; opt0.textContent = '\u2014 Quick Command \u2014';
       el.quick.append(opt0);
       QUICK_COMMANDS.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; el.quick.append(o); });
       PARAM_COMMANDS.forEach(p => { const o = document.createElement('option'); o.value = '__param__' + p.prefix; o.textContent = p.label; el.quick.append(o); });
@@ -968,6 +1003,30 @@ if (!window.__DGS_BOOTED__) {
       // Handle local slash-commands (shortcuts that don't go to the satellite)
       if (cmd.startsWith('/')) {
         const command = cmd.toLowerCase();
+
+        // /log <name>  \u2192  switch active log file on the backend
+        if (command.startsWith('/log ') || command === '/log.clear') {
+          const label = command === '/log.clear' ? '' : cmd.slice(5).trim();
+          fetch('/api/log/set', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ label }),
+          })
+            .then(r => r.text())
+            .then(text => {
+              try {
+                const d = JSON.parse(text);
+                if (d.ok) {
+                  const display = d.label || 'default';
+                  if (el.activeLogLabel) el.activeLogLabel.textContent = display;
+                  info(`Log switched \u2192 ${d.file}`);
+                } else err(`Log switch failed: ${d.error || JSON.stringify(d)}`);
+              } catch { err(`Log switch server error: ${text.slice(0, 80)}`); }
+            })
+            .catch(e => err(`Log switch error: ${e.message}`));
+          return;
+        }
+
         if (command === '/dummy.on') {
           fetch('/api/dummy/start', { method: 'POST' });
           info('Requesting dummy data from server...');
@@ -1017,19 +1076,55 @@ if (!window.__DGS_BOOTED__) {
       }
     });
     el.send?.addEventListener('click', () => { const v = (el.manual?.value || '').trim(); if (!v) return; sendCommand(v); if (el.manual) el.manual.value = ''; });
-    el.manual?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.send.click(); } });
+    el.manual?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.send?.click(); } });
 
+
+    // ---------- RING-BUFFER REPLAY ----------
+    // Fetches the server's in-memory ring buffer and replays telemetry packets
+    // into onTelemetry() so charts, key values, and GPS state are restored
+    // without flooding the log box or triggering voice announcements.
+    async function replayMissedPackets() {
+      try {
+        // 300 log entries is enough to find 120 telemetry packets for full chart history
+        const res = await fetch('/api/logs?n=300');
+        if (!res.ok) return;
+        const lines = await res.json();
+
+        st.isReplaying = true;
+        let replayed = 0;
+        for (const raw of lines) {
+          try {
+            const obj = JSON.parse(raw);
+            if (obj.telemetry) { onTelemetry(obj.telemetry); replayed++; }
+          } catch (_) {}
+        }
+        st.isReplaying = false;
+
+        if (replayed > 0) info(`\u21a9 Restored ${replayed} packets from server history.`);
+      } catch (e) {
+        st.isReplaying = false;
+        warn(`History restore failed: ${e.message}`);
+      }
+    }
 
     // ---------- WEBSOCKET CONNECTION (Real-time link) ----------
     function connect() {
+      // Don't open a second socket if one is already live
+      if (st.ws && st.ws.readyState === WebSocket.OPEN) return;
+
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const url = `${protocol}//${window.location.host}/ws/telemetry`;
-      info(`Connecting to ${url}...`);
+      info(`Connecting to ${url}\u2026`);
       st.ws = new WebSocket(url);
 
       st.ws.onopen = () => {
+        st.reconnectDelay = 2000; // reset backoff on success
         info('Backend connected.');
         setPill(true, 'Connected');
+        // On first page load initCharts() runs 200ms after connect (CSS layout pass).
+        // Wait 300ms before replaying so charts exist; on reconnect they already do.
+        const replayDelay = Object.keys(st.charts).length === 0 ? 300 : 0;
+        setTimeout(replayMissedPackets, replayDelay);
       };
 
       st.ws.onmessage = (ev) => {
@@ -1037,6 +1132,20 @@ if (!window.__DGS_BOOTED__) {
           const data = JSON.parse(ev.data);
           if (data.type === 'error') {
             err(data.message || 'Received an unknown error from backend.');
+          } else if (data.type === 'log_switched') {
+            const label = data.label || 'default';
+            if (el.activeLogLabel) el.activeLogLabel.textContent = label;
+            cmdEcho(`Log \u2192 ${data.file}`);
+            speak(`Log switched to ${label}.`);
+          } else if (data.type === 'serial_status') {
+            const lbl = document.getElementById('serialStatusLabel');
+            if (data.connected) {
+              info(`Serial reconnected on ${data.port}.`);
+              if (lbl) { lbl.textContent = `\u25cf ${data.port}`; lbl.style.color = 'var(--ok)'; }
+            } else {
+              warn(`Serial disconnected from ${data.port}. Auto-reconnecting\u2026`);
+              if (lbl) { lbl.textContent = '\u25cf disconnected'; lbl.style.color = 'var(--err)'; }
+            }
           } else if (data.type !== 'ping') {
             onTelemetry(data); // Process the data!
           }
@@ -1047,9 +1156,13 @@ if (!window.__DGS_BOOTED__) {
 
       st.ws.onclose = () => {
         st.ws = null;
-        err('Backend disconnected.');
-        setPill(false, 'Retrying...');
-        setTimeout(connect, 2000); // Try to reconnect after 2 seconds
+        // Exponential backoff: 2 \u2192 3 \u2192 4.5 \u2192 \u2026 capped at 30 s
+        const delay = st.reconnectDelay;
+        st.reconnectDelay = Math.min(Math.round(st.reconnectDelay * 1.5), 30000);
+        err(`Backend disconnected. Retrying in ${(delay / 1000).toFixed(0)} s\u2026`);
+        setPill(false, `Retry in ${(delay / 1000).toFixed(0)} s`);
+        clearTimeout(st.reconnectTimer);
+        st.reconnectTimer = setTimeout(connect, delay);
       };
 
       st.ws.onerror = (e) => {
@@ -1058,6 +1171,15 @@ if (!window.__DGS_BOOTED__) {
         st.ws?.close();
       };
     }
+
+    // Reconnect immediately when the tab becomes visible (e.g. MacBook wake from sleep)
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && (!st.ws || st.ws.readyState !== WebSocket.OPEN)) {
+        clearTimeout(st.reconnectTimer);
+        st.reconnectDelay = 2000; // reset backoff \u2014 user is actively back
+        connect();
+      }
+    });
 
     // ---------- ACTION BUTTONS ----------
     el.btnOpenCsvFolder?.addEventListener('click', async () => {
@@ -1096,15 +1218,12 @@ if (!window.__DGS_BOOTED__) {
       if (st.recoveryMap) return;
       st.recoveryMap = L.map('recoveryMap', { zoomControl: true, attributionControl: false }).setView([18.788, 98.985], 16);
 
-      // Offline Map Support for Mark Walker Award: 
-      // We cannot fetch openstreetmap tiles without WiFi, so we load an empty color background
-      // and rely entirely on the Distance/Heading readouts and drawn paths to navigate in the field.
-      // L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(st.recoveryMap);
-      st.recoveryMap.getContainer().style.background = '#e0e0e0'; // Light grey offline background
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+      }).addTo(st.recoveryMap);
 
-      st.recoveryMarker = L.marker([18.788, 98.985]).addTo(st.recoveryMap); // Payload 
-      st.gcsMarker = L.circleMarker([18.788, 98.985], { radius: 8, color: 'blue' }).addTo(st.recoveryMap); // User
-
+      st.recoveryMarker = L.marker([18.788, 98.985]).addTo(st.recoveryMap);
+      st.gcsMarker = L.circleMarker([18.788, 98.985], { radius: 8, color: '#4da3ff', fillColor: '#4da3ff', fillOpacity: 0.9, weight: 2 }).addTo(st.recoveryMap);
       st.recoveryLine = L.polyline([[18.788, 98.985], [18.788, 98.985]], { color: 'red', weight: 4, dashArray: '10, 10' }).addTo(st.recoveryMap);
     }
 
@@ -1128,13 +1247,16 @@ if (!window.__DGS_BOOTED__) {
           const uLon = pos.coords.longitude;
           st.userLoc = [uLat, uLon];
           st.gcsMarker.setLatLng(st.userLoc);
-          st.recoveryLine.setLatLngs([st.userLoc, payloadPos]);
+          // Use live marker position so recovery line updates if GPS keeps arriving
+          const pll = st.recoveryMarker.getLatLng();
+          const livePayload = [pll.lat, pll.lng];
+          st.recoveryLine.setLatLngs([st.userLoc, livePayload]);
 
-          const dist = calcDistance(uLat, uLon, payloadPos[0], payloadPos[1]);
-          const hdg = calcHeading(uLat, uLon, payloadPos[0], payloadPos[1]);
+          const dist = calcDistance(uLat, uLon, livePayload[0], livePayload[1]);
+          const hdg = calcHeading(uLat, uLon, livePayload[0], livePayload[1]);
 
           el.recovDist.textContent = `${Math.round(dist)} m`;
-          el.recovHeading.textContent = `${Math.round(hdg)}°`;
+          el.recovHeading.textContent = `${Math.round(hdg)}\u00b0`;
 
           if (st.voiceNavEnabled && dist > 5) {
             const now = Date.now();
@@ -1164,7 +1286,7 @@ if (!window.__DGS_BOOTED__) {
     function updatePinnedDist() {
       if (!el.pinnedDistDisplay) return;
       if (st.pinnedLat === null || st.pinnedLon === null || !st.gps_lat || !st.gps_lon) {
-        el.pinnedDistDisplay.textContent = '—';
+        el.pinnedDistDisplay.textContent = '\u2014';
         return;
       }
       const d = calcDistance(st.gps_lat, st.gps_lon, st.pinnedLat, st.pinnedLon);
@@ -1225,10 +1347,85 @@ if (!window.__DGS_BOOTED__) {
       }
     }
 
+    async function syncLogLabel() {
+      try {
+        const res = await fetch('/api/log/current');
+        if (res.ok) {
+          const data = await res.json();
+          const display = data.label || 'default';
+          if (el.activeLogLabel) el.activeLogLabel.textContent = display;
+        }
+      } catch (_) {}
+    }
+
+    // ---------- SERIAL PORT SELECTOR ----------
+    async function loadSerialPorts() {
+      const portSel    = document.getElementById('serialPortSel');
+      const baudSel    = document.getElementById('serialBaudSel');
+      const statusLbl  = document.getElementById('serialStatusLabel');
+      if (!portSel || !baudSel) return;
+      try {
+        const [pr, br, cr] = await Promise.all([
+          fetch('/api/serial/ports'),
+          fetch('/api/serial/bauds'),
+          fetch('/api/serial/config'),
+        ]);
+        const { ports }   = await pr.json();
+        const { presets } = await br.json();
+        const cfg          = await cr.json();
+
+        portSel.innerHTML = ports.length
+          ? ports.map(p => `<option value="${p.port}" ${p.port === cfg.port ? 'selected' : ''}>${p.port} — ${p.info.slice(0, 30)}</option>`).join('')
+          : '<option value="">No ports found</option>';
+
+        baudSel.innerHTML = presets.map(b =>
+          `<option value="${b}" ${b === cfg.baud ? 'selected' : ''}>${b}</option>`
+        ).join('');
+
+        if (statusLbl) { statusLbl.textContent = `● ${cfg.port}`; statusLbl.style.color = 'var(--muted)'; }
+      } catch (e) {
+        if (portSel) portSel.innerHTML = '<option value="">Error — server offline?</option>';
+      }
+    }
+
+    function initSerialSelector() {
+      const portSel   = document.getElementById('serialPortSel');
+      const baudSel   = document.getElementById('serialBaudSel');
+      if (!portSel || !baudSel) return;
+
+      loadSerialPorts();
+
+      document.getElementById('btnSerialRefresh')?.addEventListener('click', loadSerialPorts);
+
+      document.getElementById('btnSerialConnect')?.addEventListener('click', async () => {
+        const port = document.getElementById('serialPortSel')?.value;
+        const baud = Number(document.getElementById('serialBaudSel')?.value);
+        if (!port || !baud) return;
+        try {
+          const res = await fetch('/api/serial/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ port, baud }),
+          });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          info(`Serial reconnecting → ${port} @ ${baud}`);
+          const statusLbl = document.getElementById('serialStatusLabel');
+          if (statusLbl) { statusLbl.textContent = `● ${port}`; statusLbl.style.color = 'var(--warn)'; }
+        } catch (e) {
+          err(`Serial config failed: ${e.message}`);
+        }
+      });
+    }
+
     function init() {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      }
       initMap();
       fillCmds();
       initTheme();
+      syncLogLabel();
+      initSerialSelector();
 
       // Announce startup health
       const setupSpeech = async () => {
