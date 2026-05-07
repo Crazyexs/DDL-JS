@@ -23,7 +23,7 @@ import aiofiles
 import serial
 from serial import SerialException
 import serial.tools.list_ports
-import serial_asyncio
+# serial_asyncio removed — sync threading model is used instead
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
 from fastapi.responses import JSONResponse, FileResponse
@@ -42,6 +42,10 @@ DEFAULT_PORT = "/dev/cu.usbserial-00000000"
 
 # This is the speed of the connection. Both the radio and computer must match this number.
 DEFAULT_BAUD = 115200
+
+# 64-bit address of the PAYLOAD XBee module (ATSH + ATSL, no spaces).
+# Read these from the payload module in XCTU using ATSH and ATSL commands.
+PAYLOAD_XBEE_ADDR = bytes.fromhex("0013A20041F77466")
 
 # Setting this to True means this Python program handles the connection to the radio.
 # If False, the web browser tries to handle it directly (not recommended here).
@@ -170,8 +174,19 @@ class Telemetry(BaseModel):
     gps_lon: float = 0.0
     gps_sats: int = 0
     cmd_echo: str = "—"
+    arm_state: str = "DISARMED"
     yaw: float = 0.0
+    heading_gps: float = 0.0
     tof: float = 0.0
+    velocity_e: float = 0.0
+    velocity_n: float = 0.0
+    deploy: str = "0"
+    servo1_target: float = 0.0
+    servo1_angle: float = 0.0
+    servo2_target: float = 0.0
+    servo2_angle: float = 0.0
+    servo3_target: float = 0.0
+    servo3_angle: float = 0.0
 
     # Extra info added by the Ground Station
     gs_ts_utc: str
@@ -196,6 +211,7 @@ class GSState:
     kml_points: Deque = field(default_factory=lambda: deque(maxlen=3000))  # [{lat, lon, alt, state}]
     kml_max_alt: float = 0.0    # Track max altitude for KML metadata
     last_current_a: Optional[float] = None  # Most recent current reading (A)
+    rssi_dbm: Optional[int] = None          # Last-hop RSSI from ATDB (negative dBm)
 
 state = GSState()
 
@@ -389,7 +405,118 @@ def ensure_csv_header(path: Optional[Path] = None):
         target.write_bytes((CSV_HEADER + "\r\n").encode("utf-8"))
     state.csv_ready = True
 
-ensure_csv_header()
+# ===================== XBEE API MODE 2 FRAME CODEC =====================
+_API2_ESCAPE_SET = frozenset([0x7E, 0x7D, 0x11, 0x13])
+
+def _api2_escape(data: bytes) -> bytes:
+    """Apply API Mode 2 byte-escaping to a raw byte sequence."""
+    out = bytearray()
+    for byte in data:
+        if byte in _API2_ESCAPE_SET:
+            out += bytes([0x7D, byte ^ 0x20])
+        else:
+            out.append(byte)
+    return bytes(out)
+
+def _read_api2_frame(ser: serial.Serial) -> Optional[dict]:
+    """
+    Read one API Mode 2 frame from the GCS XBee UART.
+
+    Returns one of:
+      {"type": "telemetry", "payload": bytes}   — 0x90 RX Indicator (telemetry CSV)
+      {"type": "rssi",      "dbm":    int  }    — 0x88 AT Response for ATDB query
+      None                                       — timeout / bad checksum / other frame
+    """
+    # Sync to start delimiter — 0x7E is never escaped so we scan for it raw.
+    while True:
+        b = ser.read(1)
+        if not b:
+            return None
+        if b[0] == 0x7E:
+            break
+
+    def _read_unescaped(n: int) -> Optional[bytearray]:
+        buf = bytearray()
+        while len(buf) < n:
+            b = ser.read(1)
+            if not b:
+                return None
+            if b[0] == 0x7D:
+                b2 = ser.read(1)
+                if not b2:
+                    return None
+                buf.append(b2[0] ^ 0x20)
+            else:
+                buf.append(b[0])
+        return buf
+
+    length_raw = _read_unescaped(2)
+    if length_raw is None:
+        return None
+    length = (length_raw[0] << 8) | length_raw[1]
+    if length > 300:
+        return None
+
+    body = _read_unescaped(length + 1)
+    if body is None:
+        return None
+
+    if (sum(body) & 0xFF) != 0xFF:
+        return None
+
+    frame_type = body[0]
+
+    # 0x90 = Receive Packet (RX Indicator)
+    # Header: frame_type(1) + src_64(8) + src_16(2) + options(1) = 12 bytes
+    if frame_type == 0x90 and length >= 12:
+        return {"type": "telemetry", "payload": bytes(body[12:length])}
+
+    # 0x88 = AT Command Response — we use this to read back ATDB (last-hop RSSI).
+    # Body layout: frame_type(1) + frame_id(1) + cmd[2] + status(1) + value(N)
+    # For ATDB: value is 1 byte = RSSI magnitude (negate to get dBm).
+    if frame_type == 0x88 and length >= 6:
+        at_cmd   = bytes(body[2:4])
+        status   = body[4]
+        if at_cmd == b'DB' and status == 0x00:
+            rssi_dbm = -body[5]         # XBee reports magnitude; negate for dBm
+            return {"type": "rssi", "dbm": rssi_dbm}
+
+    return None
+
+
+def _build_db_query() -> bytes:
+    """
+    Build an API Mode 2 Local AT Command Request (0x08) that queries ATDB.
+    ATDB returns the RSSI of the last received RF packet (last-hop, in dBm magnitude).
+    This command is LOCAL — it queries the GCS XBee directly, does not go over RF.
+    """
+    content  = bytearray([0x08, 0x01, 0x44, 0x42])  # frame_type, frame_id, 'D', 'B'
+    length   = len(content)
+    checksum = (0xFF - (sum(content) & 0xFF)) & 0xFF
+    len_bytes = bytes([length >> 8, length & 0xFF])
+    body      = bytes(content) + bytes([checksum])
+    return b'\x7E' + _api2_escape(len_bytes) + _api2_escape(body)
+
+
+def _build_api2_tx_frame(payload: bytes) -> bytes:
+    """
+    Build an API Mode 2 Transmit Request (0x10) frame addressed to PAYLOAD_XBEE_ADDR.
+    Escapes 0x7E, 0x7D, 0x11, 0x13 everywhere except the leading start delimiter.
+    """
+    content = bytearray([0x10, 0x01])   # frame type: TX Request, frame ID: 1
+    content += PAYLOAD_XBEE_ADDR        # 64-bit destination (8 bytes)
+    content += b'\xFF\xFE'             # 16-bit dest = unknown/let stack decide
+    content += b'\x00'                 # broadcast radius = 0
+    content += b'\xC0'                 # options = 0xC0 (DigiMesh)
+    content += payload
+
+    length   = len(content)
+    checksum = (0xFF - (sum(content) & 0xFF)) & 0xFF
+
+    len_bytes = bytes([length >> 8, length & 0xFF])
+    body      = bytes(content) + bytes([checksum])
+    return b'\x7E' + _api2_escape(len_bytes) + _api2_escape(body)
+
 
 # ===================== SERIAL COMMUNICATION (Talking to Hardware) =====================
 import threading
@@ -450,18 +577,33 @@ def serial_read_thread_target(loop):
         # 2. Read Loop (Listen for data)
         try:
             if _serial_port and _serial_port.is_open:
-                # Read a line of text from the serial port
-                # timeout=1 ensures we don't get stuck here forever if there is no data
-                line_bytes = _serial_port.readline()
-                if line_bytes:
+                frame = _read_api2_frame(_serial_port)
+                if frame is None:
+                    pass  # timeout or bad checksum — port is still fine
+
+                elif frame["type"] == "telemetry":
                     try:
-                        # Convert bytes to a string and remove whitespace
-                        line = line_bytes.decode(errors="ignore").rstrip("\r\n")
+                        line = frame["payload"].decode(errors="ignore").rstrip("\r\n")
                         if line:
-                            # Send the line to the main program loop to be handled
                             asyncio.run_coroutine_threadsafe(handle_telemetry_line(line), loop)
                     except Exception:
                         pass
+                    # Query RSSI of this packet from the local GCS XBee immediately.
+                    # ATDB is a local command — write directly, not through the RF uplink queue.
+                    try:
+                        with _serial_lock:
+                            if _serial_port and _serial_port.is_open:
+                                _serial_port.write(_build_db_query())
+                                _serial_port.flush()
+                    except Exception:
+                        pass
+
+                elif frame["type"] == "rssi":
+                    state.rssi_dbm = frame["dbm"]
+                    asyncio.run_coroutine_threadsafe(
+                        broadcast_ws({"type": "rssi", "dbm": frame["dbm"]}),
+                        loop
+                    )
             else:
                 # If connection is lost, clean up
                 with _serial_lock:
@@ -503,16 +645,20 @@ async def serial_writer_worker():
         # Wait for a command to appear in the queue
         cmd = await uplink_q.get()
         try:
-            # Convert string to bytes and add a newline character
-            data = (cmd + "\r\n").encode()
-            
-            wrote = False
-            # Use the lock to make sure we don't conflict with the reading thread
-            with _serial_lock:
-                if _serial_port and _serial_port.is_open:
-                    _serial_port.write(data)
-                    _serial_port.flush() # Ensure data is sent immediately
-                    wrote = True
+            # Wrap the command in an API Mode 2 Transmit Request frame (0x10).
+            data = _build_api2_tx_frame((cmd + "\r\n").encode())
+
+            # Run the blocking lock+write in a thread-pool executor so the event
+            # loop is never stalled waiting for the threading.Lock.
+            def _do_write():
+                with _serial_lock:
+                    if _serial_port and _serial_port.is_open:
+                        _serial_port.write(data)
+                        _serial_port.flush()
+                        return True
+                return False
+
+            wrote = await asyncio.to_thread(_do_write)
             
             if wrote:
                 log_json(subsystem="uplink", sent=cmd)
@@ -565,35 +711,34 @@ async def handle_telemetry_line(raw: str):
     It uses 'TELEMETRY_CONFIG' to know which column is which.
     """
 
-    # Use csv.reader to handle quoted fields correctly (e.g., "CX,ON")
+    # ── STEP 0: Save raw line unconditionally ────────────────────────────────
+    # This runs before ANY parsing or validation so nothing can prevent it.
+    # Every byte the payload sends lands in the CSV exactly as received.
+    if state.csv_ready:
+        async with aiofiles.open(get_active_csv(), "a", encoding="utf-8", newline="") as f:
+            await f.write(raw + "\r\n")
+
+    # ── STEP 1: Parse fields for UI display only ─────────────────────────────
     reader = csv.reader([raw], skipinitialspace=True)
     try:
         parts = next(reader)
     except StopIteration:
-        return # Empty line
-    
-    parts = [p.strip() for p in parts]
-    
-    # We check if we have enough columns based on our config
-    # Note: Optional fields at the end might be missing, so we allow slightly fewer.
-    min_required = len([x for x in TELEMETRY_CONFIG if not x.get("optional", False)])
-    
-    if len(parts) < min_required:
-        ring.append(json.dumps({"bad_line": raw}))
-        # Save unexpected lines so we don't lose them
-        if state.csv_ready:
-            async with aiofiles.open(get_active_csv(), "a", encoding="utf-8", newline="") as f:
-                await f.write(raw + "\r\n")
         return
 
-    # 1) Parse data dynamically using the config (for UI display only; CSV is saved as raw)
-    parsed_data = {}
+    parts = [p.strip() for p in parts]
 
+    # If the line has fewer fields than the config expects, log it and skip
+    # UI broadcast — the raw data is already saved above.
+    min_required = len([x for x in TELEMETRY_CONFIG if not x.get("optional", False)])
+    if len(parts) < min_required:
+        ring.append(json.dumps({"bad_line": raw}))
+        return
+
+    parsed_data = {}
     for i, cfg in enumerate(TELEMETRY_CONFIG):
         key = cfg.get("internal_key")
         dtype = cfg.get("type")
         val_str = (parts[i] if i < len(parts) else "").strip()
-
         try:
             if dtype == "int":
                 value = int(val_str) if val_str else 0
@@ -602,27 +747,23 @@ async def handle_telemetry_line(raw: str):
             else:
                 value = val_str
         except ValueError:
-            if dtype == "int": value = 0
+            if dtype == "int":   value = 0
             elif dtype == "float": value = 0.0
-            else: value = ""
-
+            else:                value = ""
         if key:
             parsed_data[key] = value
 
-    # 2) Create the Telemetry object
-    # We add the Ground Station calculated fields here
-    parsed_data["gs_ts_utc"] = now_utc_iso()
-    parsed_data["gs_rx_count"] = state.rx_count + 1
+    # ── STEP 2: Build Telemetry object for WebSocket broadcast ───────────────
+    parsed_data["gs_ts_utc"]    = now_utc_iso()
+    parsed_data["gs_rx_count"]  = state.rx_count + 1
     parsed_data["gs_loss_total"] = state.loss_count
-    parsed_data["gs_raw_line"] = raw
-    
-    # This '**parsed_data' magic passes the dictionary as arguments
-    tel = Telemetry(**parsed_data)
+    parsed_data["gs_raw_line"]  = raw
 
-    # 4) Append to the CSV file (ALWAYS SAVE RAW EXACTLY AS RECEIVED)
-    if state.csv_ready:
-        async with aiofiles.open(get_active_csv(), "a", encoding="utf-8", newline="") as f:
-            await f.write(raw + "\r\n")
+    try:
+        tel = Telemetry(**parsed_data)
+    except Exception as e:
+        log_json(level="warn", event="telemetry_parse_error", error=str(e), raw=raw)
+        return
 
 
     # 4b) Auto-save KML (Google Earth) — collect GPS points and write to disk
@@ -818,8 +959,19 @@ def generate_dummy_telemetry_line() -> str:
         "gps_lon": f"{dummy_state['lon']:.4f}",
         "gps_sats": str(random.randint(8, 12)),
         "cmd_echo": "CMD_OK" if pkt % 10 != 0 else "CX,ON",
+        "arm_state": "ARMED" if pkt > 3 else "DISARMED",
         "yaw": f"{(pkt * 5) % 360:.2f}",
+        "heading_gps": f"{(pkt * 3) % 360:.2f}",
         "tof": f"{random.uniform(0, 5):.3f}",
+        "velocity_e": f"{(random.random() - 0.5) * 4:.3f}",
+        "velocity_n": f"{(random.random() - 0.5) * 4:.3f}",
+        "deploy": "1" if flight_state in ("DESCENT", "LANDED") else "0",
+        "servo1_target": f"{90 + (random.random() - 0.5) * 20:.1f}",
+        "servo1_angle":  f"{90 + (random.random() - 0.5) * 20:.1f}",
+        "servo2_target": f"{90 + (random.random() - 0.5) * 20:.1f}",
+        "servo2_angle":  f"{90 + (random.random() - 0.5) * 20:.1f}",
+        "servo3_target": f"{90 + (random.random() - 0.5) * 20:.1f}",
+        "servo3_angle":  f"{90 + (random.random() - 0.5) * 20:.1f}",
     }
 
     # Build the line based on the config order
@@ -883,14 +1035,22 @@ async def lifespan(app: FastAPI):
     
     # Shutdown logic
     log_json(event="shutdown")
-    
-    # Signal thread to stop
+
+    # Cancel background async tasks and wait for them to finish cleanly.
+    all_tasks = list(tasks)
+    if dummy_task and not dummy_task.done():
+        all_tasks.append(dummy_task)
+    if sim_task and not sim_task.done():
+        all_tasks.append(sim_task)
+    for t in all_tasks:
+        t.cancel()
+    if all_tasks:
+        await asyncio.gather(*all_tasks, return_exceptions=True)
+
+    # Signal serial thread to stop and wait.
     _stop_event.set()
     if serial_thread:
         serial_thread.join(timeout=2)
-        
-    for t in tasks:
-        t.cancel()
 
 app = FastAPI(title="CanSat Ground Station (Python)", lifespan=lifespan)
 
@@ -927,6 +1087,7 @@ async def api_health():
         "rx": {"received": state.rx_count, "lost": state.loss_count},
         "last_cmd": state.last_cmd,
         "current_a": state.last_current_a,
+        "rssi_dbm": state.rssi_dbm,
     }
 
 @app.get("/api/logs")
@@ -939,7 +1100,9 @@ async def api_logs(n: int = 500):
 @app.get("/api/serial/ports")
 async def api_serial_ports():
     """Lists all available USB serial ports."""
-    ports = [{"port": p.device, "info": f"{p.description} {p.hwid}"} for p in serial.tools.list_ports.comports()]
+    # list_ports.comports() is a blocking OS call — run off the event loop.
+    raw = await asyncio.to_thread(serial.tools.list_ports.comports)
+    ports = [{"port": p.device, "info": f"{p.description} {p.hwid}"} for p in raw]
     return {"ports": ports}
 
 @app.get("/api/serial/bauds")
@@ -960,16 +1123,18 @@ async def api_serial_set(cfg: SerialCfg):
     state.cfg = cfg
     log_json(event="cfg_changed", port=cfg.port, baud=cfg.baud)
     
-    # Force reconnect by closing current port
+    # Force reconnect by closing current port without blocking the event loop.
     global _serial_port
-    with _serial_lock:
-        if _serial_port and _serial_port.is_open:
-            try:
-                _serial_port.close()
-            except:
-                pass
-            _serial_port = None
-            
+    def _do_close():
+        with _serial_lock:
+            global _serial_port
+            if _serial_port and _serial_port.is_open:
+                try:
+                    _serial_port.close()
+                except Exception:
+                    pass
+                _serial_port = None
+    await asyncio.to_thread(_do_close)
     return {"ok": True}
 
 # ---- Command uplink ----
