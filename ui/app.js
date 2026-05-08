@@ -81,6 +81,7 @@ if (!window.__DGS_BOOTED__) {
       reconnectDelay: 2000,     // current backoff delay (ms); grows on repeated failures
       reconnectTimer: null,     // handle for the pending reconnect setTimeout
       lastChartTs: 0,           // timestamp of last chart push (for 5 Hz throttle)
+      lastGsUiTs: 0,            // timestamp of last GS UI update (throttle)
       lastSpeedAlt: undefined,  // altitude at the previous speed sample
     };
 
@@ -177,6 +178,7 @@ if (!window.__DGS_BOOTED__) {
       gsGpsMini: $("#gsGpsMini"),
       gsRange: $("#gsRange"),
       gsBearing: $("#gsBearing"),
+      serialStatusLabel: $("#serialStatusLabel"),
 
       // Chart Toggles
       altitudeToggles: $("#altitudeToggles"),
@@ -570,7 +572,7 @@ if (!window.__DGS_BOOTED__) {
     function updateGsUi() {
       // Status bar text
       if (el.gsGpsMini) {
-        if (st.gs_fix && st.gs_lat) {
+        if (st.gs_fix && st.gs_lat != null && st.gs_lon != null) {
           el.gsGpsMini.textContent = `${st.gs_lat.toFixed(5)}, ${st.gs_lon.toFixed(5)} • ${st.gs_sats} sats • ${st.gs_alt.toFixed(1)} m`;
           el.gsGpsMini.style.color = 'var(--ok)';
         } else {
@@ -581,7 +583,7 @@ if (!window.__DGS_BOOTED__) {
 
       // Show/hide GS marker on 2D map
       if (st.map && st.gsMapMarker) {
-        if (st.gs_fix && st.gs_lat) {
+        if (st.gs_fix && st.gs_lat != null && st.gs_lon != null) {
           st.gsMapMarker.setLatLng([st.gs_lat, st.gs_lon]);
           st.gsMapMarker.setStyle({ opacity: 1, fillOpacity: 0.85 });
         } else {
@@ -725,11 +727,15 @@ if (!window.__DGS_BOOTED__) {
     }
 
 
-    // Resize charts, Cesium globe, and Leaflet map when window resizes
+    // Resize charts, Cesium globe, and Leaflet map when window resizes (debounced)
+    let _resizeTimer = null;
     window.addEventListener('resize', () => {
-      Object.values(st.charts).forEach(c => c?.resize());
-      st.cesiumViewer?.resize();
-      st.map?.invalidateSize();
+      clearTimeout(_resizeTimer);
+      _resizeTimer = setTimeout(() => {
+        Object.values(st.charts).forEach(c => c?.resize());
+        st.cesiumViewer?.resize();
+        st.map?.invalidateSize();
+      }, 150);
     });
 
     // ---------- TELEMETRY HANDLING (The Core Logic) ----------
@@ -979,15 +985,19 @@ if (!window.__DGS_BOOTED__) {
 
             // Collect GPS point for KML export (skip during replay)
             st.kmlPoints.push({ lat, lon, alt });
-            if (st.kmlPoints.length > 2000) st.kmlPoints.shift();
+            if (st.kmlPoints.length > 3000) st.kmlPoints.shift();
 
             // Keep recovery overlay marker in sync (Leaflet)
             if (st.recoveryMarker) st.recoveryMarker.setLatLng([lat, lon]);
           }
 
-          // Update pinned GPS distance and GS range line
-          updatePinnedDist();
-          updateGsUi();
+          // Update pinned GPS distance and GS range line (throttled to 100 ms)
+          const _now = Date.now();
+          if (_now - st.lastGsUiTs >= 100) {
+            st.lastGsUiTs = _now;
+            updatePinnedDist();
+            updateGsUi();
+          }
         }
       }
 
@@ -1206,8 +1216,8 @@ if (!window.__DGS_BOOTED__) {
 
     // ---------- WEBSOCKET CONNECTION (Real-time link) ----------
     function connect() {
-      // Don't open a second socket if one is already live
-      if (st.ws && st.ws.readyState === WebSocket.OPEN) return;
+      // Don't open a second socket if one is already live or connecting
+      if (st.ws && (st.ws.readyState === WebSocket.OPEN || st.ws.readyState === WebSocket.CONNECTING)) return;
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const url = `${protocol}//${window.location.host}/ws/telemetry`;
@@ -1237,13 +1247,12 @@ if (!window.__DGS_BOOTED__) {
           } else if (data.type === 'rssi') {
             if (el.rssiLabel) el.rssiLabel.textContent = `RSSI: ${data.dbm} dBm`;
           } else if (data.type === 'serial_status') {
-            const lbl = document.getElementById('serialStatusLabel');
             if (data.connected) {
               info(`Serial reconnected on ${data.port}.`);
-              if (lbl) { lbl.textContent = `\u25cf ${data.port}`; lbl.style.color = 'var(--ok)'; }
+              if (el.serialStatusLabel) { el.serialStatusLabel.textContent = `\u25cf ${data.port}`; el.serialStatusLabel.style.color = 'var(--ok)'; }
             } else {
               warn(`Serial disconnected from ${data.port}. Auto-reconnecting\u2026`);
-              if (lbl) { lbl.textContent = '\u25cf disconnected'; lbl.style.color = 'var(--err)'; }
+              if (el.serialStatusLabel) { el.serialStatusLabel.textContent = '\u25cf disconnected'; el.serialStatusLabel.style.color = 'var(--err)'; }
             }
           } else if (data.type === 'gs_gps') {
             st.gs_lat  = data.lat;
@@ -1345,6 +1354,12 @@ if (!window.__DGS_BOOTED__) {
       const payloadPos = [st.gps_lat, st.gps_lon];
       st.recoveryMarker.setLatLng(payloadPos);
       st.recoveryMap.setView(payloadPos, 18);
+
+      // Clear any existing watch before starting a new one
+      if (st.geoWatchId !== undefined && navigator.geolocation) {
+        navigator.geolocation.clearWatch(st.geoWatchId);
+        st.geoWatchId = undefined;
+      }
 
       // Start tracking user location
       if (navigator.geolocation) {

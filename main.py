@@ -409,7 +409,7 @@ async def _save_kml():
 
 ring: Deque[str] = deque(maxlen=10_000)   # Keeps the last 10,000 log messages in memory
 ws_clients: Set[WebSocket] = set()        # A list of all web browsers currently connected
-uplink_q: asyncio.Queue[str] = asyncio.Queue() # A queue (line) of commands waiting to be sent
+uplink_q: asyncio.Queue[str] = asyncio.Queue(maxsize=100) # A queue (line) of commands waiting to be sent
 _kml_gps_count: int = 0                   # Count valid GPS packets; write KML every 10
 
 _serial_transport = None
@@ -576,10 +576,7 @@ def serial_read_thread_target(loop):
                 with _serial_lock:
                     _serial_port = ser
                 log_json(event="serial_connected", port=state.cfg.port)
-                asyncio.run_coroutine_threadsafe(
-                    broadcast_ws({"type": "serial_status", "connected": True, "port": state.cfg.port}),
-                    loop
-                )
+                _thread_broadcast({"type": "serial_status", "connected": True, "port": state.cfg.port}, loop)
             except SerialException as e:
                 msg = str(e)
                 if "Access is denied" in msg:
@@ -603,7 +600,10 @@ def serial_read_thread_target(loop):
                     try:
                         line = frame["payload"].decode(errors="ignore").rstrip("\r\n")
                         if line:
-                            asyncio.run_coroutine_threadsafe(handle_telemetry_line(line), loop)
+                            try:
+                                asyncio.run_coroutine_threadsafe(handle_telemetry_line(line), loop)
+                            except RuntimeError:
+                                pass
                     except Exception:
                         pass
                     # Query RSSI of this packet from the local GCS XBee immediately.
@@ -618,18 +618,12 @@ def serial_read_thread_target(loop):
 
                 elif frame["type"] == "rssi":
                     state.rssi_dbm = frame["dbm"]
-                    asyncio.run_coroutine_threadsafe(
-                        broadcast_ws({"type": "rssi", "dbm": frame["dbm"]}),
-                        loop
-                    )
+                    _thread_broadcast({"type": "rssi", "dbm": frame["dbm"]}, loop)
             else:
                 # If connection is lost, clean up
                 with _serial_lock:
                     _serial_port = None
-                asyncio.run_coroutine_threadsafe(
-                    broadcast_ws({"type": "serial_status", "connected": False, "port": state.cfg.port}),
-                    loop
-                )
+                _thread_broadcast({"type": "serial_status", "connected": False, "port": state.cfg.port}, loop)
                 time.sleep(1)
 
         except Exception as e:
@@ -642,10 +636,7 @@ def serial_read_thread_target(loop):
                     except:
                         pass
                     _serial_port = None
-            asyncio.run_coroutine_threadsafe(
-                broadcast_ws({"type": "serial_status", "connected": False, "port": state.cfg.port}),
-                loop
-            )
+            _thread_broadcast({"type": "serial_status", "connected": False, "port": state.cfg.port}, loop)
             time.sleep(1)
 
     # Cleanup when the program stops
@@ -653,6 +644,8 @@ def serial_read_thread_target(loop):
         if _serial_port:
             _serial_port.close()
     log_json(event="serial_thread_stop")
+
+GPS_FIX_TIMEOUT = 5  # seconds without valid GGA → clear fix
 
 def gps_reader_thread_target(loop):
     """
@@ -664,10 +657,20 @@ def gps_reader_thread_target(loop):
         try:
             ser = serial.Serial(GPS_PORT, GPS_BAUD, timeout=1)
             log_json(event="gps_connected", port=GPS_PORT)
+            last_valid_fix_time = time.time()
             while not _gps_stop.is_set():
                 try:
                     raw = ser.readline()
                     if not raw:
+                        # readline timed out — check if fix has gone stale
+                        if gs_gps.fix and (time.time() - last_valid_fix_time) > GPS_FIX_TIMEOUT:
+                            gs_gps.fix = False
+                            _thread_broadcast({
+                                "type": "gs_gps",
+                                "lat": gs_gps.lat, "lon": gs_gps.lon,
+                                "alt": gs_gps.alt, "sats": gs_gps.sats,
+                                "fix": False,
+                            }, loop)
                         continue
                     line = raw.decode("ascii", errors="ignore").strip()
                     if not line.startswith("$"):
@@ -687,20 +690,18 @@ def gps_reader_thread_target(loop):
                         gs_gps.sats = sats
                         gs_gps.fix = True
                         gs_gps.ts = now_utc_iso()
+                        last_valid_fix_time = time.time()
                     else:
                         gs_gps.fix = False
                         gs_gps.sats = sats
-                    asyncio.run_coroutine_threadsafe(
-                        broadcast_ws({
-                            "type": "gs_gps",
-                            "lat": gs_gps.lat,
-                            "lon": gs_gps.lon,
-                            "alt": gs_gps.alt,
-                            "sats": gs_gps.sats,
-                            "fix": gs_gps.fix,
-                        }),
-                        loop
-                    )
+                    _thread_broadcast({
+                        "type": "gs_gps",
+                        "lat": gs_gps.lat,
+                        "lon": gs_gps.lon,
+                        "alt": gs_gps.alt,
+                        "sats": gs_gps.sats,
+                        "fix": gs_gps.fix,
+                    }, loop)
                 except Exception:
                     pass
             ser.close()
@@ -753,6 +754,13 @@ def now_utc_iso() -> str:
     """Returns the current time in UTC as a string."""
     return datetime.now(timezone.utc).isoformat()
 
+def _thread_broadcast(payload: dict, loop) -> None:
+    """Call broadcast_ws from a non-async thread. Silently ignored if loop is closing."""
+    try:
+        asyncio.run_coroutine_threadsafe(broadcast_ws(payload), loop)
+    except RuntimeError:
+        pass
+
 async def broadcast_ws(payload: dict):
     """Sends a JSON message to all connected web browsers."""
     text = json.dumps(payload)
@@ -780,6 +788,7 @@ async def broadcast_ws(payload: dict):
     # Remove disconnected clients
     for ws in dead:
         ws_clients.discard(ws)
+        log_json(level="info", event="ws_client_disconnected", remaining=len(ws_clients))
 
 async def handle_telemetry_line(raw: str):
     """
@@ -1147,6 +1156,7 @@ async def api_dummy_start():
     if dummy_task and not dummy_task.done():
         return {"ok": False, "message": "Dummy task already running"}
     dummy_state["packet"] = 0
+    dummy_state["has_landed"] = False
     dummy_task = asyncio.create_task(dummy_data_sender())
     return {"ok": True}
 
@@ -1221,7 +1231,6 @@ async def api_serial_set(cfg: SerialCfg):
     log_json(event="cfg_changed", port=cfg.port, baud=cfg.baud)
     
     # Force reconnect by closing current port without blocking the event loop.
-    global _serial_port
     def _do_close():
         with _serial_lock:
             global _serial_port
