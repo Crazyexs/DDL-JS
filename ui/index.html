@@ -70,6 +70,14 @@
       <div class="k">GPS Sats</div>
       <div id="gpsSats" class="v">--</div>
     </div>
+    <div class="kv-major">
+      <div class="k">Arm State</div>
+      <div id="armState" class="v">--</div>
+    </div>
+    <div class="kv-major">
+      <div class="k">Deploy</div>
+      <div id="deployState" class="v">--</div>
+    </div>
     <div class="group" id="recoveryGroup" style="display: none;">
       <button id="btnFindPayload" class="btn xl primary"
         style="background-color: var(--ok); border-color: var(--ok);">FIND PAYLOAD</button>
@@ -94,6 +102,10 @@
     <div class="kv-major">
       <div class="k">Lost Packets</div>
       <div id="lossCount" class="v">0</div>
+    </div>
+    <div class="kv-major">
+      <div class="k">Link RSSI</div>
+      <div id="rssiLabel" class="v">-- dBm</div>
     </div>
     <div class="group" style="flex-direction:column;align-items:flex-start;gap:3px;">
       <div style="display:flex;gap:4px;align-items:center;">
@@ -202,7 +214,24 @@
             <span>Z: <b id="val_accel_z">--</b></span>
           </div>
         </div>
+        <div class="kv-cell">
+          <div class="k">Vel East (m/s)</div>
+          <div id="val_vel_e" class="v">--</div>
+        </div>
+        <div class="kv-cell">
+          <div class="k">Vel North (m/s)</div>
+          <div id="val_vel_n" class="v">--</div>
+        </div>
+        <div class="kv-cell">
+          <div class="k">ToF (m)</div>
+          <div id="val_tof" class="v">--</div>
+        </div>
+        <div class="kv-cell">
+          <div class="k">GPS Heading</div>
+          <div id="val_heading_gps" class="v">-- &deg;</div>
+        </div>
       </div>
+
     </section>
 
     <!-- LOGS (Right Column, Bottom) -->

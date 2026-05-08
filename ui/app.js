@@ -76,6 +76,14 @@ if (!window.__DGS_BOOTED__) {
       lastSpeedAlt: undefined,  // altitude at the previous speed sample
     };
 
+    // ---------- CONSTANTS (outside hot path) ----------
+    // 2S Li-ion discharge curve — declared once, never re-allocated per packet.
+    const LI_ION_2S = [
+      [8.40, 100], [8.20, 95], [8.00, 88], [7.80, 78],
+      [7.60, 63],  [7.40, 48], [7.20, 32], [7.00, 18],
+      [6.80, 9],   [6.60, 4],  [6.40, 1],  [6.00, 0],
+    ];
+
     // ---------- DOM ELEMENTS (Links to HTML items) ----------
     const el = {
       // Audio & Theme buttons
@@ -161,6 +169,14 @@ if (!window.__DGS_BOOTED__) {
       altitudeToggles: $("#altitudeToggles"),
       showRaw: $("#showRaw"),
 
+      // New fields
+      armState:      $("#armState"),
+      deployState:   $("#deployState"),
+      rssiLabel:     $("#rssiLabel"),
+      val_vel_e:     $("#val_vel_e"),
+      val_vel_n:     $("#val_vel_n"),
+      val_tof:       $("#val_tof"),
+      val_heading_gps: $("#val_heading_gps"),
     };
 
     // ---------- AUDIO (TTS) & MATH HELPERS ----------
@@ -411,10 +427,11 @@ if (!window.__DGS_BOOTED__) {
       if (el.mapToggle) el.mapToggle.textContent = '→ 3D';
     }
 
+    // ── Raspberry Pi: always 2D Leaflet only (no Cesium/3D) ─────────────
     function initMap() {
       if (!el.mapEl) return;
-      initCesium3D();
-      el.mapToggle?.addEventListener('click', toggleMap);
+      initLeaflet2D();
+      if (el.mapToggle) el.mapToggle.style.display = 'none'; // Pi has no 3D
     }
 
     // ── Toggle between 3D Cesium and 2D Leaflet ──────────────────────
@@ -689,7 +706,7 @@ if (!window.__DGS_BOOTED__) {
         st.lastSpokenState = t.state;
         
         // Setup Avg Fall Speed Box when descent / release begins
-        if (t.state === 'DESCENT' || t.state === 'PAYLOAD_REALEASE' || t.state === 'PAYLOAD_RELEASE') {
+        if (t.state === 'DESCENT' || t.state === 'PAYLOAD_RELEASE' || t.state === 'PROBE_RELEASE') {
           if (st.releaseAlt == null) {
             st.releaseAlt  = typeof t.altitude_m === 'number' ? t.altitude_m : 0;
             st.releaseTime = parseMissionSec(t.mission_time); // satellite clock, TX-rate-agnostic
@@ -725,6 +742,18 @@ if (!window.__DGS_BOOTED__) {
       el.gpsSats && (el.gpsSats.textContent = t.gps_sats ?? '—');
       updateCompass(t.yaw);
 
+      // Arm state (colour-coded: red = ARMED)
+      if (el.armState) {
+        el.armState.textContent = t.arm_state || '—';
+        el.armState.style.color = (t.arm_state === 'ARMED') ? 'var(--err)' : 'var(--ok)';
+      }
+      // Deploy state
+      if (el.deployState) {
+        const deployed = t.deploy === '1' || t.deploy === 1 || t.deploy === true;
+        el.deployState.textContent = deployed ? 'DEPLOYED' : 'STOWED';
+        el.deployState.style.color = deployed ? 'var(--warn)' : 'var(--muted)';
+      }
+
       // 3. Update Key Value Grid
       el.val_temp && (el.val_temp.textContent = `${num(t.temperature_c, 1)} °C`);
       el.val_pressure && (el.val_pressure.textContent = `${num(t.pressure_kpa, 2)} kPa`);
@@ -732,13 +761,7 @@ if (!window.__DGS_BOOTED__) {
       const voltage = t.voltage_v || 0;
       el.val_voltage && (el.val_voltage.textContent = `${num(voltage, 2)} V`);
       
-      // 2S Li-ion discharge curve lookup (per-cell × 2): non-linear interpolation
-      // Points derived from standard 18650 discharge curve at ~0.5C
-      const LI_ION_2S = [
-        [8.40, 100], [8.20, 95], [8.00, 88], [7.80, 78],
-        [7.60, 63],  [7.40, 48], [7.20, 32], [7.00, 18],
-        [6.80, 9],   [6.60, 4],  [6.40, 1],  [6.00, 0],
-      ];
+      // 2S Li-ion SoC — LI_ION_2S is declared once at module level (not per packet)
       let pct = 0;
       if (voltage >= LI_ION_2S[0][0]) {
         pct = 100;
@@ -756,7 +779,8 @@ if (!window.__DGS_BOOTED__) {
       
       if (el.val_battery_pct) {
           el.val_battery_pct.textContent = `${num(pct, 0)}%`;
-          const bColor = pct > 50 ? getCssVar('--ok') : pct > 20 ? getCssVar('--warn') : getCssVar('--err');
+          // Use CSS variable references directly — avoids getComputedStyle on every packet.
+          const bColor = pct > 50 ? 'var(--ok)' : pct > 20 ? 'var(--warn)' : 'var(--err)';
           el.val_battery_pct.style.color = bColor;
           if (el.battery_bar) el.battery_bar.style.background = bColor;
       }
@@ -771,6 +795,14 @@ if (!window.__DGS_BOOTED__) {
       el.val_accel_x && (el.val_accel_x.textContent = num(t.accel_r_dps2, 2));
       el.val_accel_y && (el.val_accel_y.textContent = num(t.accel_p_dps2, 2));
       el.val_accel_z && (el.val_accel_z.textContent = num(t.accel_y_dps2, 2));
+
+      // Velocity, ToF, GPS heading (use cached el references)
+      el.val_vel_e     && (el.val_vel_e.textContent     = `${num(t.velocity_e, 2)} m/s`);
+      el.val_vel_n     && (el.val_vel_n.textContent     = `${num(t.velocity_n, 2)} m/s`);
+      el.val_tof       && (el.val_tof.textContent       = `${num(t.tof, 3)} m`);
+      el.val_heading_gps && (el.val_heading_gps.textContent = `${num(t.heading_gps, 1)}°`);
+
+      // Servo angles (use cached el references)
 
       // Calculate G Force and Speed
       const accel_mag = Math.sqrt(
@@ -952,7 +984,7 @@ if (!window.__DGS_BOOTED__) {
       'CX,ON', 'CX,OFF',
       // State Overrides
       'STATE,IDLE_SAFE', 'STATE,LAUNCH_PAD', 'STATE,ASCENT', 'STATE,APOGEE',
-      'STATE,DESCENT', 'STATE,PROBE_REALEASE', 'STATE,PAYLOAD_REALEASE', 'STATE,LANDED',
+      'STATE,DESCENT', 'STATE,PROBE_RELEASE', 'STATE,PAYLOAD_RELEASE', 'STATE,LANDED',
       // Calibration & Reset
       'CAL', 'RESET', 'CAL,MAG,START', 'CAL,NORTH', 'CAL,MAG,STATUS', 'CAL,MAG,RESET',
       // Simulation
@@ -1136,6 +1168,8 @@ if (!window.__DGS_BOOTED__) {
             if (el.activeLogLabel) el.activeLogLabel.textContent = label;
             cmdEcho(`Log \u2192 ${data.file}`);
             speak(`Log switched to ${label}.`);
+          } else if (data.type === 'rssi') {
+            if (el.rssiLabel) el.rssiLabel.textContent = `RSSI: ${data.dbm} dBm`;
           } else if (data.type === 'serial_status') {
             const lbl = document.getElementById('serialStatusLabel');
             if (data.connected) {
