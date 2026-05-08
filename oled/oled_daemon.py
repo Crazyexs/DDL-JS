@@ -383,7 +383,7 @@ def main() -> None:
     log.info("Starting OLED daemon")
 
     st = read_state()
-    interface = st.get("interface", "i2c")
+    interface = st.get("interface", "spi")
     device = None
 
     # Keep retrying until display is found
