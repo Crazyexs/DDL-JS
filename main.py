@@ -817,7 +817,7 @@ async def sim_file_streamer(file_path: Path):
     if not file_path.exists():
         log_json(level="error", event="sim_file_missing", file=str(file_path))
         # Try to find it in the current directory if full path failed
-        fallback = ROOT_DIR / "cansat_2023_simp.csv"
+        fallback = ROOT_DIR / "cansat_2023_simp.txt"
         if fallback.exists():
             file_path = fallback
         else:
@@ -1168,7 +1168,7 @@ async def api_command(body: CommandBody):
             if sim_task and not sim_task.done():
                 pass
             else:
-                path = ROOT_DIR / "cansat_2023_simp.csv"
+                path = ROOT_DIR / "cansat_2023_simp.txt"
                 sim_task = asyncio.create_task(sim_file_streamer(path))
         else:
             log_json(level="warn", event="sim_activate_ignored", reason="sim_not_enabled")
@@ -1180,7 +1180,7 @@ async def api_command(body: CommandBody):
 async def api_sim_start(file: Optional[str] = None):
     """Starts reading a simulation file."""
     # Default to the requirement file name
-    filename = file or "cansat_2023_simp.csv"
+    filename = file or "cansat_2023_simp.txt"
     path = ROOT_DIR / filename
     
     # If not found at root, check if user provided a full path or just a name
