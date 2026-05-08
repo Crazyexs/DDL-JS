@@ -216,6 +216,7 @@ class GSState:
     kml_max_alt: float = 0.0    # Track max altitude for KML metadata
     last_current_a: Optional[float] = None  # Most recent current reading (A)
     rssi_dbm: Optional[int] = None          # Last-hop RSSI from ATDB (negative dBm)
+    last_t: Optional[dict] = None           # Most recent parsed telemetry packet (for OLED daemon)
 
 state = GSState()
 
@@ -886,6 +887,7 @@ async def handle_telemetry_line(raw: str):
 
     # 6) Send to UI
     payload = tel.model_dump()
+    state.last_t = payload
     await broadcast_ws(payload)
     ring.append(json.dumps({"telemetry": payload}))
 
@@ -1455,6 +1457,93 @@ async def ws_telemetry(ws: WebSocket):
         c = ws.client
         c_info = f"{c.host}:{c.port}" if c else "unknown"
         log_json(event="ws_disconnected", client=c_info)
+
+# ===================== OLED DISPLAY CONTROL =====================
+OLED_STATE_FILE = Path("/tmp/daedalus_oled.json")
+
+def _read_oled_state() -> dict:
+    try:
+        return json.loads(OLED_STATE_FILE.read_text())
+    except Exception:
+        return {}
+
+def _write_oled_state(patch: dict) -> None:
+    cur = _read_oled_state()
+    cur.update(patch)
+    OLED_STATE_FILE.write_text(json.dumps(cur))
+
+class DisplayConfig(BaseModel):
+    mode: Optional[str] = None
+    interface: Optional[str] = None
+    i2c_address: Optional[str] = None
+    telemetry_fields: Optional[list] = None
+    custom_text: Optional[str] = None
+    pixel_art: Optional[str] = None
+
+@app.get("/display", include_in_schema=False)
+async def display_panel():
+    return FileResponse(UI_DIR / "display.html")
+
+@app.get("/api/display/config")
+async def api_display_config_get():
+    """Returns current OLED display config."""
+    st = _read_oled_state()
+    st["oled_mode"] = st.get("mode", "pi_stats")
+    return st
+
+@app.post("/api/display/config")
+async def api_display_config_set(cfg: DisplayConfig):
+    """Updates OLED display config and writes state file for daemon."""
+    patch = {k: v for k, v in cfg.model_dump().items() if v is not None}
+    _write_oled_state(patch)
+    return {"ok": True}
+
+@app.get("/api/display/data")
+async def api_display_data():
+    """Returns live telemetry + Pi stats for OLED daemon to poll."""
+    import subprocess, socket as _socket
+
+    # Pi stats
+    pi = {}
+    try:
+        import psutil as _ps
+        pi["cpu"]      = _ps.cpu_percent(interval=None)
+        pi["ram_pct"]  = _ps.virtual_memory().percent
+        pi["disk_pct"] = _ps.disk_usage("/").percent
+    except Exception:
+        pass
+    try:
+        pi["temp"] = int(Path("/sys/class/thermal/thermal_zone0/temp").read_text()) / 1000.0
+    except Exception:
+        pi["temp"] = 0.0
+    try:
+        out = subprocess.check_output(["vcgencmd","measure_volts","core"], timeout=1, text=True)
+        pi["volt"] = float(out.strip().replace("volt=","").replace("V",""))
+    except Exception:
+        pi["volt"] = 0.0
+    try:
+        s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+        s.connect(("10.255.255.255", 1))
+        pi["ip"] = s.getsockname()[0]
+        s.close()
+    except Exception:
+        pi["ip"] = "n/a"
+
+    # OLED daemon alive check
+    oled_ok = False
+    try:
+        import subprocess as _sp
+        result = _sp.run(["pgrep", "-f", "oled_daemon.py"], capture_output=True)
+        oled_ok = result.returncode == 0
+    except Exception:
+        pass
+
+    return {
+        "pi_stats":      pi,
+        "telemetry":     state.last_t or {},
+        "oled_daemon_ok": oled_ok,
+        "oled_mode":     _read_oled_state().get("mode", "pi_stats"),
+    }
 
 # ---- Static UI ----
 @app.get("/cmd", include_in_schema=False)

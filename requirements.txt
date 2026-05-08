@@ -6,3 +6,6 @@ python-multipart==0.0.12
 aiofiles==24.1.0
 pydantic==2.12.3
 pynmea2==1.19.0
+luma.oled>=3.13.0
+psutil>=5.9.0
+Pillow>=10.0.0
