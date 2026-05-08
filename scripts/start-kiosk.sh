@@ -25,7 +25,7 @@ xset s off s noblank -dpms 2>/dev/null || true
 # ─── Hide mouse cursor after 0.5 s of inactivity ──────────────────
 unclutter -idle 0.5 -root &
 
-# ─── Launch browser in kiosk mode ─────────────────────────────────
+# ─── Launch browser (windowed) ────────────────────────────────────
 # Prefer chromium (lighter on Pi); fall back to firefox-esr
 if command -v chromium-browser &>/dev/null; then
     BROWSER="chromium-browser"
@@ -33,14 +33,13 @@ elif command -v chromium &>/dev/null; then
     BROWSER="chromium"
 elif command -v firefox-esr &>/dev/null; then
     BROWSER="firefox-esr"
-    exec "$BROWSER" --kiosk "$GCS_URL"
+    exec "$BROWSER" "$GCS_URL"
 else
     echo "[kiosk] ERROR: No supported browser found (chromium-browser / firefox-esr)."
     exit 1
 fi
 
 exec "$BROWSER" \
-    --kiosk \
     --no-sandbox \
     --disable-infobars \
     --disable-session-crashed-bubble \
