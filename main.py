@@ -23,7 +23,7 @@ import aiofiles
 import serial
 from serial import SerialException
 import serial.tools.list_ports
-# serial_asyncio removed — sync threading model is used instead
+import pynmea2
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
 from fastapi.responses import JSONResponse, FileResponse
@@ -46,6 +46,10 @@ DEFAULT_BAUD = 115200
 # 64-bit address of the PAYLOAD XBee module (ATSH + ATSL, no spaces).
 # Read these from the payload module in XCTU using ATSH and ATSL commands.
 PAYLOAD_XBEE_ADDR = bytes.fromhex("0013A20041F77466")
+
+# USB GPS module (VK-172 u-blox 7) port and baud rate
+GPS_PORT = "/dev/ttyACM0"
+GPS_BAUD = 9600
 
 # Setting this to True means this Python program handles the connection to the radio.
 # If False, the web browser tries to handle it directly (not recommended here).
@@ -247,6 +251,19 @@ def _select_serial_port_at_startup():
     print("=" * 54 + "\n")
 
 _select_serial_port_at_startup()
+
+# ===================== GROUND STATION GPS STATE =====================
+@dataclass
+class GSGpsState:
+    """Holds the live position fix from the Pi's own USB GPS (VK-172 u-blox 7)."""
+    lat: float = 0.0
+    lon: float = 0.0
+    alt: float = 0.0
+    sats: int = 0
+    fix: bool = False
+    ts: Optional[str] = None
+
+gs_gps = GSGpsState()
 
 # ===================== KML AUTO-SAVE =====================
 KML_CURRENT = DATA_DIR / f"Flight_{TEAM_ID:04}.kml"
@@ -526,6 +543,7 @@ import time
 _serial_port: Optional[serial.Serial] = None
 _serial_lock = threading.Lock()
 _stop_event = threading.Event()
+_gps_stop = threading.Event()
 
 def serial_read_thread_target(loop):
     """
@@ -635,6 +653,64 @@ def serial_read_thread_target(loop):
         if _serial_port:
             _serial_port.close()
     log_json(event="serial_thread_stop")
+
+def gps_reader_thread_target(loop):
+    """
+    Reads NMEA sentences from the VK-172 USB GPS on /dev/ttyACM0.
+    Parses GGA sentences and broadcasts the fix via WebSocket.
+    """
+    log_json(event="gps_thread_start", port=GPS_PORT)
+    while not _gps_stop.is_set():
+        try:
+            ser = serial.Serial(GPS_PORT, GPS_BAUD, timeout=1)
+            log_json(event="gps_connected", port=GPS_PORT)
+            while not _gps_stop.is_set():
+                try:
+                    raw = ser.readline()
+                    if not raw:
+                        continue
+                    line = raw.decode("ascii", errors="ignore").strip()
+                    if not line.startswith("$"):
+                        continue
+                    try:
+                        msg = pynmea2.parse(line)
+                    except pynmea2.ParseError:
+                        continue
+                    if not isinstance(msg, pynmea2.types.talker.GGA):
+                        continue
+                    quality = int(msg.gps_qual) if msg.gps_qual else 0
+                    sats = int(msg.num_sats) if msg.num_sats else 0
+                    if quality > 0 and msg.latitude and msg.longitude:
+                        gs_gps.lat = round(msg.latitude, 6)
+                        gs_gps.lon = round(msg.longitude, 6)
+                        gs_gps.alt = round(float(msg.altitude), 1) if msg.altitude else 0.0
+                        gs_gps.sats = sats
+                        gs_gps.fix = True
+                        gs_gps.ts = now_utc_iso()
+                    else:
+                        gs_gps.fix = False
+                        gs_gps.sats = sats
+                    asyncio.run_coroutine_threadsafe(
+                        broadcast_ws({
+                            "type": "gs_gps",
+                            "lat": gs_gps.lat,
+                            "lon": gs_gps.lon,
+                            "alt": gs_gps.alt,
+                            "sats": gs_gps.sats,
+                            "fix": gs_gps.fix,
+                        }),
+                        loop
+                    )
+                except Exception:
+                    pass
+            ser.close()
+        except serial.SerialException as e:
+            log_json(level="warn", event="gps_open_failed", port=GPS_PORT, error=str(e))
+            time.sleep(5)
+        except Exception as e:
+            log_json(level="error", event="gps_thread_error", error=str(e))
+            time.sleep(5)
+    log_json(event="gps_thread_stop")
 
 async def serial_writer_worker():
     """
@@ -1013,15 +1089,21 @@ async def lifespan(app: FastAPI):
     
     tasks = []
     serial_thread = None
+    gps_thread = None
+
+    loop = asyncio.get_running_loop()
 
     if USE_SERVER_SERIAL:
         # Start Serial Reader Thread (this needs to be a thread because reading is blocking)
-        loop = asyncio.get_running_loop()
         serial_thread = threading.Thread(target=serial_read_thread_target, args=(loop,), daemon=True)
         serial_thread.start()
-        
+
         # Start Serial Writer Task (this can be an async task)
         tasks.append(asyncio.create_task(serial_writer_worker()))
+
+    # Start GPS Reader Thread (always runs, independent of radio serial)
+    gps_thread = threading.Thread(target=gps_reader_thread_target, args=(loop,), daemon=True)
+    gps_thread.start()
     
     # Keep the WebSocket connection alive with a ping every 10 seconds
     async def ws_ping():
@@ -1047,10 +1129,13 @@ async def lifespan(app: FastAPI):
     if all_tasks:
         await asyncio.gather(*all_tasks, return_exceptions=True)
 
-    # Signal serial thread to stop and wait.
+    # Signal serial and GPS threads to stop and wait.
     _stop_event.set()
+    _gps_stop.set()
     if serial_thread:
         serial_thread.join(timeout=2)
+    if gps_thread:
+        gps_thread.join(timeout=2)
 
 app = FastAPI(title="CanSat Ground Station (Python)", lifespan=lifespan)
 
@@ -1088,6 +1173,18 @@ async def api_health():
         "last_cmd": state.last_cmd,
         "current_a": state.last_current_a,
         "rssi_dbm": state.rssi_dbm,
+    }
+
+@app.get("/api/gs/gps")
+async def api_gs_gps():
+    """Returns the current fix from the Pi's own USB GPS (VK-172 u-blox 7)."""
+    return {
+        "lat": gs_gps.lat,
+        "lon": gs_gps.lon,
+        "alt": gs_gps.alt,
+        "sats": gs_gps.sats,
+        "fix": gs_gps.fix,
+        "ts": gs_gps.ts,
     }
 
 @app.get("/api/logs")

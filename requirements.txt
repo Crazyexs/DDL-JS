@@ -5,3 +5,4 @@ pyserial-asyncio==0.6
 python-multipart==0.0.12
 aiofiles==24.1.0
 pydantic==2.12.3
+pynmea2==1.19.0

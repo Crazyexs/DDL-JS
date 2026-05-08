@@ -45,6 +45,14 @@ if (!window.__DGS_BOOTED__) {
       maxAlt: 0,
       gps_lat: null,
       gps_lon: null,
+      // Ground Station own GPS (VK-172 u-blox 7)
+      gs_lat: null,
+      gs_lon: null,
+      gs_alt: 0,
+      gs_sats: 0,
+      gs_fix: false,
+      gsMapMarker: null,
+      gsRangeLine: null,
       // Audio and Recovery State
       audioEnabled: true,
       voiceNavEnabled: true,
@@ -164,6 +172,11 @@ if (!window.__DGS_BOOTED__) {
       val_fall_speed: $("#val_fall_speed"),
       val_battery_pct: $("#val_battery_pct"),
       battery_bar: $("#battery_bar"),
+
+      // GS GPS status bar
+      gsGpsMini: $("#gsGpsMini"),
+      gsRange: $("#gsRange"),
+      gsBearing: $("#gsBearing"),
 
       // Chart Toggles
       altitudeToggles: $("#altitudeToggles"),
@@ -424,6 +437,19 @@ if (!window.__DGS_BOOTED__) {
       }).addTo(st.map);
 
       st.marker = L.marker([18.788, 98.985]).addTo(st.map);
+
+      // Ground Station GPS marker (green circle, hidden until fix acquired)
+      st.gsMapMarker = L.circleMarker([18.788, 98.985], {
+        radius: 10, color: '#00cc44', fillColor: '#00cc44',
+        fillOpacity: 0.85, weight: 2, opacity: 0,
+      }).addTo(st.map).bindTooltip('Ground Station', { permanent: false, direction: 'top' });
+      st.gsMapMarker.setStyle({ opacity: 0, fillOpacity: 0 });
+
+      // Dashed line from GS to CanSat
+      st.gsRangeLine = L.polyline([], {
+        color: '#ffb454', weight: 2, dashArray: '8, 5', opacity: 0.75,
+      }).addTo(st.map);
+
       if (el.mapToggle) el.mapToggle.textContent = '→ 3D';
     }
 
@@ -538,6 +564,45 @@ if (!window.__DGS_BOOTED__) {
       a.href = url;  a.download = `DAEDALUS_${teamId}_flight.kml`;  a.click();
       URL.revokeObjectURL(url);
       info('Google Earth KML downloaded! Open in Google Earth to view 3D flight path.');
+    }
+
+    // ---------- GROUND STATION GPS UI ----------
+    function updateGsUi() {
+      // Status bar text
+      if (el.gsGpsMini) {
+        if (st.gs_fix && st.gs_lat) {
+          el.gsGpsMini.textContent = `${st.gs_lat.toFixed(5)}, ${st.gs_lon.toFixed(5)} • ${st.gs_sats} sats • ${st.gs_alt.toFixed(1)} m`;
+          el.gsGpsMini.style.color = 'var(--ok)';
+        } else {
+          el.gsGpsMini.textContent = `acquiring… • ${st.gs_sats} sats`;
+          el.gsGpsMini.style.color = 'var(--warn)';
+        }
+      }
+
+      // Show/hide GS marker on 2D map
+      if (st.map && st.gsMapMarker) {
+        if (st.gs_fix && st.gs_lat) {
+          st.gsMapMarker.setLatLng([st.gs_lat, st.gs_lon]);
+          st.gsMapMarker.setStyle({ opacity: 1, fillOpacity: 0.85 });
+        } else {
+          st.gsMapMarker.setStyle({ opacity: 0, fillOpacity: 0 });
+        }
+      }
+
+      // Range line + distance/bearing when both GS and CanSat have a fix
+      if (st.gs_fix && st.gs_lat && st.gps_lat && st.gps_lon) {
+        if (st.map && st.gsRangeLine) {
+          st.gsRangeLine.setLatLngs([[st.gs_lat, st.gs_lon], [st.gps_lat, st.gps_lon]]);
+        }
+        const dist = calcDistance(st.gs_lat, st.gs_lon, st.gps_lat, st.gps_lon);
+        const hdg  = calcHeading(st.gs_lat, st.gs_lon, st.gps_lat, st.gps_lon);
+        if (el.gsRange)   el.gsRange.textContent   = dist < 1000 ? `${Math.round(dist)} m` : `${(dist / 1000).toFixed(2)} km`;
+        if (el.gsBearing) el.gsBearing.textContent = `${Math.round(hdg)}°`;
+      } else {
+        if (st.map && st.gsRangeLine) st.gsRangeLine.setLatLngs([]);
+        if (el.gsRange)   el.gsRange.textContent   = '—';
+        if (el.gsBearing) el.gsBearing.textContent = '—';
+      }
     }
 
     // ---------- CHART LOGIC (Graphs) ----------
@@ -912,7 +977,7 @@ if (!window.__DGS_BOOTED__) {
               st.map.panTo([lat, lon], { animate: false });
             }
 
-            // Collect GPS point for KML export (backend already has these; skip during replay)
+            // Collect GPS point for KML export (skip during replay)
             st.kmlPoints.push({ lat, lon, alt });
             if (st.kmlPoints.length > 2000) st.kmlPoints.shift();
 
@@ -920,8 +985,9 @@ if (!window.__DGS_BOOTED__) {
             if (st.recoveryMarker) st.recoveryMarker.setLatLng([lat, lon]);
           }
 
-          // Update pinned GPS distance (cheap text update \u2014 always run)
+          // Update pinned GPS distance and GS range line
           updatePinnedDist();
+          updateGsUi();
         }
       }
 
@@ -1179,6 +1245,13 @@ if (!window.__DGS_BOOTED__) {
               warn(`Serial disconnected from ${data.port}. Auto-reconnecting\u2026`);
               if (lbl) { lbl.textContent = '\u25cf disconnected'; lbl.style.color = 'var(--err)'; }
             }
+          } else if (data.type === 'gs_gps') {
+            st.gs_lat  = data.lat;
+            st.gs_lon  = data.lon;
+            st.gs_alt  = data.alt;
+            st.gs_sats = data.sats;
+            st.gs_fix  = data.fix;
+            updateGsUi();
           } else if (data.type !== 'ping') {
             onTelemetry(data); // Process the data!
           }
