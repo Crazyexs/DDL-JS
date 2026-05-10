@@ -634,7 +634,7 @@ def serial_read_thread_target(loop):
                 if _serial_port:
                     try:
                         _serial_port.close()
-                    except:
+                    except Exception:
                         pass
                     _serial_port = None
             _thread_broadcast({"type": "serial_status", "connected": False, "port": state.cfg.port}, loop)
@@ -941,6 +941,8 @@ async def sim_file_streamer(file_path: Path):
     except asyncio.CancelledError:
         log_json(event="sim_cancelled", file=str(file_path))
         raise
+    except Exception as e:
+        log_json(level="error", event="sim_file_error", error=str(e), file=str(file_path))
             
     log_json(event="sim_complete", file=str(file_path))
 
@@ -1388,7 +1390,11 @@ def _open_folder(path: Path):
         elif sys.platform == "darwin":
             subprocess.Popen(["open", str(path)]) # Mac
         else:
-            subprocess.Popen(["xdg-open", str(path)]) # Linux
+            import shutil
+            if shutil.which("pcmanfm"):
+                subprocess.Popen(["pcmanfm", str(path)])
+            else:
+                subprocess.Popen(["xdg-open", str(path)]) # Linux
         return True, None
     except Exception as e:
         return False, str(e)
@@ -1501,7 +1507,7 @@ async def api_display_config_set(cfg: DisplayConfig):
 @app.get("/api/display/data")
 async def api_display_data():
     """Returns live telemetry + Pi stats for OLED daemon to poll."""
-    import subprocess, socket as _socket
+    import socket as _socket
 
     # Pi stats
     pi = {}
@@ -1516,11 +1522,21 @@ async def api_display_data():
         pi["temp"] = int(Path("/sys/class/thermal/thermal_zone0/temp").read_text()) / 1000.0
     except Exception:
         pi["temp"] = 0.0
-    try:
-        out = subprocess.check_output(["vcgencmd","measure_volts","core"], timeout=1, text=True)
-        pi["volt"] = float(out.strip().replace("volt=","").replace("V",""))
-    except Exception:
-        pi["volt"] = 0.0
+
+    async def _get_volt():
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "vcgencmd", "measure_volts", "core",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=1.0)
+            return float(stdout.decode().strip().replace("volt=","").replace("V",""))
+        except Exception:
+            return 0.0
+
+    pi["volt"] = await _get_volt()
+
     try:
         s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
         s.connect(("10.255.255.255", 1))
@@ -1530,13 +1546,19 @@ async def api_display_data():
         pi["ip"] = "n/a"
 
     # OLED daemon alive check
-    oled_ok = False
-    try:
-        import subprocess as _sp
-        result = _sp.run(["pgrep", "-f", "oled_daemon.py"], capture_output=True)
-        oled_ok = result.returncode == 0
-    except Exception:
-        pass
+    async def _check_oled():
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "pgrep", "-f", "oled_daemon.py",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await asyncio.wait_for(proc.communicate(), timeout=1.0)
+            return proc.returncode == 0
+        except Exception:
+            return False
+
+    oled_ok = await _check_oled()
 
     return {
         "pi_stats":      pi,
