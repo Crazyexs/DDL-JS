@@ -4,116 +4,127 @@ Real-time telemetry dashboard for CanSat Team #1043. FastAPI backend + browser-b
 
 ---
 
-## Quick Start (Mac / Linux)
+## Deep Installation Guide
 
-```bash
-git clone https://github.com/Crazyexs/DDL-JS.git
-cd DDL-JS
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8080
-```
+Follow these step-by-step instructions to download, install, and run the Ground Control Station (GCS) on your computer.
 
-Open **http://localhost:8080** in your browser.
+### Prerequisites
 
-## Quick Start (Windows)
+Before you begin, you must have **Python 3.9** (or newer) installed on your computer. 
+- **Windows**: Download Python from [python.org/downloads](https://www.python.org/downloads/). *Crucial Step:* During installation, make sure you check the box that says **"Add Python to PATH"** before clicking Install.
+- **macOS**: Install via Homebrew (`brew install python`) or download from python.org.
+- **Linux**: Usually pre-installed, or install via `sudo apt install python3 python3-venv`.
 
+You also need **Git** installed to download the code. Download from [git-scm.com](https://git-scm.com/downloads).
+
+---
+
+### Step-by-Step: Windows
+
+**1. Open Command Prompt**
+Press `Win + R`, type `cmd`, and press Enter.
+
+**2. Download the Code**
+Run the following command to clone the repository to your computer:
 ```bat
 git clone https://github.com/Crazyexs/DDL-JS.git
+```
+
+**3. Enter the Project Folder**
+```bat
 cd DDL-JS
+```
+
+**4. Create a Virtual Environment**
+This creates an isolated environment so the project's dependencies don't mess with your system Python:
+```bat
 python -m venv venv
+```
+
+**5. Activate the Virtual Environment**
+You must run this command *every time* you open a new terminal to run the GCS:
+```bat
 venv\Scripts\activate
+```
+*(You will know it worked if you see `(venv)` at the start of your command prompt).*
+
+**6. Install the Dependencies**
+Download all the required libraries (like FastAPI and PySerial) automatically:
+```bat
 pip install -r requirements.txt
+```
+
+**7. Start the Server**
+Run the FastAPI backend server:
+```bat
 python -m uvicorn main:app --host 0.0.0.0 --port 8080
 ```
+The server is now running! Leave this Command Prompt window open.
 
 ---
 
-## Requirements
+### Step-by-Step: macOS & Linux
 
-- Python 3.9 or newer
-- No other system dependencies needed (all libraries in `requirements.txt`)
+**1. Open Terminal**
+Open your Terminal application.
 
----
-
-## Serial Port Setup
-
-Edit `DEFAULT_PORT` at the top of `main.py` to match your XBee radio:
-
-| OS | Example |
-|---|---|
-| macOS | `/dev/cu.usbserial-XXXXXXXX` |
-| Linux / Pi | `/dev/ttyUSB0` |
-| Windows | `COM3` |
-
-If no radio is connected, click **Run Sim** in the UI to generate dummy telemetry.
-
----
-
-## Raspberry Pi Setup
-
-One command installs everything and configures auto-start:
-
+**2. Download the Code**
+Run the following command to clone the repository:
 ```bash
 git clone https://github.com/Crazyexs/DDL-JS.git
+```
+
+**3. Enter the Project Folder**
+```bash
 cd DDL-JS
-git checkout raspberry-pi
-sudo bash scripts/setup-pi.sh
-sudo reboot
 ```
 
-After reboot the backend starts automatically (systemd) and the browser opens
-in kiosk mode when the desktop loads.
-
-### What the setup script does
-
-| Step | What happens |
-|---|---|
-| System packages | Installs `chromium-browser`, `python3-venv`, `unclutter`, `curl` |
-| Python venv | Creates `venv/` and installs `requirements.txt` |
-| systemd service | `daedalus-gcs.service` — starts backend at boot, restarts on crash |
-| Kiosk autostart | XDG + LXDE autostart entries launch Chromium in kiosk mode after login |
-| Serial access | Adds user to `dialout` group for XBee radio access |
-| `gcs` tool | Installs `/usr/local/bin/gcs` for easy management |
-
-### Managing the service
-
+**4. Create a Virtual Environment**
 ```bash
-gcs start      # start the backend
-gcs stop       # stop the backend
-gcs restart    # restart the backend
-gcs status     # show service status
-gcs logs       # live log stream (Ctrl+C to exit)
-gcs open       # open dashboard in browser
+python3 -m venv venv
 ```
 
-Or with systemctl directly:
-
+**5. Activate the Virtual Environment**
+You must run this command *every time* you open a new terminal to run the GCS:
 ```bash
-sudo systemctl start  daedalus-gcs
-sudo systemctl stop   daedalus-gcs
-sudo systemctl status daedalus-gcs
-journalctl -u daedalus-gcs -f
+source venv/bin/activate
 ```
+*(You will know it worked if you see `(venv)` at the start of your command prompt).*
 
-### Accessing the dashboard
-
-| From | URL |
-|---|---|
-| On the Pi | `http://127.0.0.1:8080` |
-| Another device on same network | `http://<pi-ip>:8080` |
-| Remote (via ngrok) | Run `ngrok http 8080` in a terminal |
-
-### Re-running setup
-
-The setup script is idempotent — safe to run again after a `git pull`:
-
+**6. Install the Dependencies**
 ```bash
-git pull
-sudo bash scripts/setup-pi.sh
-gcs restart
+pip install -r requirements.txt
 ```
+
+**7. Start the Server**
+Run the FastAPI backend server:
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8080
+```
+The server is now running! Leave this Terminal window open.
+
+---
+
+## Opening the Dashboard
+
+Once the server is running (Step 7 above), open your preferred web browser (Google Chrome or Microsoft Edge recommended) and go to:
+
+**[http://localhost:8080](http://localhost:8080)**
+
+---
+
+## Hardware & Serial Port Setup
+
+You no longer need to edit the code to connect to your XBee radio! 
+
+1. Plug your XBee USB radio adapter into your computer.
+2. Open the dashboard in your browser (`http://localhost:8080`).
+3. Look at the **Configuration Panel** on the left side of the screen.
+4. Select the correct **COM Port** (Windows) or `/dev/` port (Mac/Linux) from the dropdown list.
+5. Ensure the **Baud Rate** is set to `115200` (or whatever matches your XBee configuration).
+6. Click **Connect**.
+
+If you do not have a radio plugged in but still want to test the dashboard, you can click **Run Sim** or use the `/dummy.on` command in the quick commands list to generate fake telemetry.
 
 ---
 
@@ -124,10 +135,7 @@ DDL-JS/
 ├── main.py                  # Backend server (FastAPI + serial)
 ├── requirements.txt         # Python dependencies
 ├── telemetry_config.json    # Telemetry field definitions (CSV column order)
-├── cansat_2023_simp.csv     # Simulation pressure data
-├── scripts/
-│   ├── setup-pi.sh          # Raspberry Pi one-command installer
-│   └── start-kiosk.sh       # Kiosk browser launcher (called by autostart)
+├── cansat_2023_simp.txt     # Simulation pressure data
 └── ui/
     ├── index.html           # Main dashboard
     ├── cmd.html             # Standalone command panel (/cmd)
@@ -140,7 +148,7 @@ DDL-JS/
 
 ## Commands Reference
 
-All commands are sent via the Quick Command dropdown or the manual input box.
+All commands are sent via the Quick Command dropdown or the manual input box in the dashboard.
 
 | Command | Description |
 |---|---|
