@@ -23,7 +23,7 @@ import aiofiles
 import serial
 from serial import SerialException
 import serial.tools.list_ports
-# serial_asyncio removed — sync threading model is used instead
+import pynmea2
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
 from fastapi.responses import JSONResponse, FileResponse
@@ -46,6 +46,10 @@ DEFAULT_BAUD = 115200
 # 64-bit address of the PAYLOAD XBee module (ATSH + ATSL, no spaces).
 # Read these from the payload module in XCTU using ATSH and ATSL commands.
 PAYLOAD_XBEE_ADDR = bytes.fromhex("0013A20041F77466")
+
+# USB GPS module (VK-172 u-blox 7) port and baud rate
+GPS_PORT = "/dev/ttyACM0"
+GPS_BAUD = 9600
 
 # Setting this to True means this Python program handles the connection to the radio.
 # If False, the web browser tries to handle it directly (not recommended here).
@@ -212,6 +216,7 @@ class GSState:
     kml_max_alt: float = 0.0    # Track max altitude for KML metadata
     last_current_a: Optional[float] = None  # Most recent current reading (A)
     rssi_dbm: Optional[int] = None          # Last-hop RSSI from ATDB (negative dBm)
+    last_t: Optional[dict] = None           # Most recent parsed telemetry packet (for OLED daemon)
 
 state = GSState()
 
@@ -247,6 +252,19 @@ def _select_serial_port_at_startup():
     print("=" * 54 + "\n")
 
 _select_serial_port_at_startup()
+
+# ===================== GROUND STATION GPS STATE =====================
+@dataclass
+class GSGpsState:
+    """Holds the live position fix from the Pi's own USB GPS (VK-172 u-blox 7)."""
+    lat: float = 0.0
+    lon: float = 0.0
+    alt: float = 0.0
+    sats: int = 0
+    fix: bool = False
+    ts: Optional[str] = None
+
+gs_gps = GSGpsState()
 
 # ===================== KML AUTO-SAVE =====================
 KML_CURRENT = DATA_DIR / f"Flight_{TEAM_ID:04}.kml"
@@ -392,7 +410,7 @@ async def _save_kml():
 
 ring: Deque[str] = deque(maxlen=10_000)   # Keeps the last 10,000 log messages in memory
 ws_clients: Set[WebSocket] = set()        # A list of all web browsers currently connected
-uplink_q: asyncio.Queue[str] = asyncio.Queue() # A queue (line) of commands waiting to be sent
+uplink_q: asyncio.Queue[str] = asyncio.Queue(maxsize=100) # A queue (line) of commands waiting to be sent
 _kml_gps_count: int = 0                   # Count valid GPS packets; write KML every 10
 
 _serial_transport = None
@@ -526,6 +544,7 @@ import time
 _serial_port: Optional[serial.Serial] = None
 _serial_lock = threading.Lock()
 _stop_event = threading.Event()
+_gps_stop = threading.Event()
 
 def serial_read_thread_target(loop):
     """
@@ -558,10 +577,7 @@ def serial_read_thread_target(loop):
                 with _serial_lock:
                     _serial_port = ser
                 log_json(event="serial_connected", port=state.cfg.port)
-                asyncio.run_coroutine_threadsafe(
-                    broadcast_ws({"type": "serial_status", "connected": True, "port": state.cfg.port}),
-                    loop
-                )
+                _thread_broadcast({"type": "serial_status", "connected": True, "port": state.cfg.port}, loop)
             except SerialException as e:
                 msg = str(e)
                 if "Access is denied" in msg:
@@ -585,7 +601,10 @@ def serial_read_thread_target(loop):
                     try:
                         line = frame["payload"].decode(errors="ignore").rstrip("\r\n")
                         if line:
-                            asyncio.run_coroutine_threadsafe(handle_telemetry_line(line), loop)
+                            try:
+                                asyncio.run_coroutine_threadsafe(handle_telemetry_line(line), loop)
+                            except RuntimeError:
+                                pass
                     except Exception:
                         pass
                     # Query RSSI of this packet from the local GCS XBee immediately.
@@ -600,18 +619,12 @@ def serial_read_thread_target(loop):
 
                 elif frame["type"] == "rssi":
                     state.rssi_dbm = frame["dbm"]
-                    asyncio.run_coroutine_threadsafe(
-                        broadcast_ws({"type": "rssi", "dbm": frame["dbm"]}),
-                        loop
-                    )
+                    _thread_broadcast({"type": "rssi", "dbm": frame["dbm"]}, loop)
             else:
                 # If connection is lost, clean up
                 with _serial_lock:
                     _serial_port = None
-                asyncio.run_coroutine_threadsafe(
-                    broadcast_ws({"type": "serial_status", "connected": False, "port": state.cfg.port}),
-                    loop
-                )
+                _thread_broadcast({"type": "serial_status", "connected": False, "port": state.cfg.port}, loop)
                 time.sleep(1)
 
         except Exception as e:
@@ -621,13 +634,10 @@ def serial_read_thread_target(loop):
                 if _serial_port:
                     try:
                         _serial_port.close()
-                    except:
+                    except Exception:
                         pass
                     _serial_port = None
-            asyncio.run_coroutine_threadsafe(
-                broadcast_ws({"type": "serial_status", "connected": False, "port": state.cfg.port}),
-                loop
-            )
+            _thread_broadcast({"type": "serial_status", "connected": False, "port": state.cfg.port}, loop)
             time.sleep(1)
 
     # Cleanup when the program stops
@@ -635,6 +645,74 @@ def serial_read_thread_target(loop):
         if _serial_port:
             _serial_port.close()
     log_json(event="serial_thread_stop")
+
+GPS_FIX_TIMEOUT = 5  # seconds without valid GGA → clear fix
+
+def gps_reader_thread_target(loop):
+    """
+    Reads NMEA sentences from the VK-172 USB GPS on /dev/ttyACM0.
+    Parses GGA sentences and broadcasts the fix via WebSocket.
+    """
+    log_json(event="gps_thread_start", port=GPS_PORT)
+    while not _gps_stop.is_set():
+        try:
+            ser = serial.Serial(GPS_PORT, GPS_BAUD, timeout=1)
+            log_json(event="gps_connected", port=GPS_PORT)
+            last_valid_fix_time = time.time()
+            while not _gps_stop.is_set():
+                try:
+                    raw = ser.readline()
+                    if not raw:
+                        # readline timed out — check if fix has gone stale
+                        if gs_gps.fix and (time.time() - last_valid_fix_time) > GPS_FIX_TIMEOUT:
+                            gs_gps.fix = False
+                            _thread_broadcast({
+                                "type": "gs_gps",
+                                "lat": gs_gps.lat, "lon": gs_gps.lon,
+                                "alt": gs_gps.alt, "sats": gs_gps.sats,
+                                "fix": False,
+                            }, loop)
+                        continue
+                    line = raw.decode("ascii", errors="ignore").strip()
+                    if not line.startswith("$"):
+                        continue
+                    try:
+                        msg = pynmea2.parse(line)
+                    except pynmea2.ParseError:
+                        continue
+                    if not isinstance(msg, pynmea2.types.talker.GGA):
+                        continue
+                    quality = int(msg.gps_qual) if msg.gps_qual else 0
+                    sats = int(msg.num_sats) if msg.num_sats else 0
+                    if quality > 0 and msg.latitude and msg.longitude:
+                        gs_gps.lat = round(msg.latitude, 6)
+                        gs_gps.lon = round(msg.longitude, 6)
+                        gs_gps.alt = round(float(msg.altitude), 1) if msg.altitude else 0.0
+                        gs_gps.sats = sats
+                        gs_gps.fix = True
+                        gs_gps.ts = now_utc_iso()
+                        last_valid_fix_time = time.time()
+                    else:
+                        gs_gps.fix = False
+                        gs_gps.sats = sats
+                    _thread_broadcast({
+                        "type": "gs_gps",
+                        "lat": gs_gps.lat,
+                        "lon": gs_gps.lon,
+                        "alt": gs_gps.alt,
+                        "sats": gs_gps.sats,
+                        "fix": gs_gps.fix,
+                    }, loop)
+                except Exception:
+                    pass
+            ser.close()
+        except serial.SerialException as e:
+            log_json(level="warn", event="gps_open_failed", port=GPS_PORT, error=str(e))
+            time.sleep(5)
+        except Exception as e:
+            log_json(level="error", event="gps_thread_error", error=str(e))
+            time.sleep(5)
+    log_json(event="gps_thread_stop")
 
 async def serial_writer_worker():
     """
@@ -677,6 +755,13 @@ def now_utc_iso() -> str:
     """Returns the current time in UTC as a string."""
     return datetime.now(timezone.utc).isoformat()
 
+def _thread_broadcast(payload: dict, loop) -> None:
+    """Call broadcast_ws from a non-async thread. Silently ignored if loop is closing."""
+    try:
+        asyncio.run_coroutine_threadsafe(broadcast_ws(payload), loop)
+    except RuntimeError:
+        pass
+
 async def broadcast_ws(payload: dict):
     """Sends a JSON message to all connected web browsers."""
     text = json.dumps(payload)
@@ -704,6 +789,7 @@ async def broadcast_ws(payload: dict):
     # Remove disconnected clients
     for ws in dead:
         ws_clients.discard(ws)
+        log_json(level="info", event="ws_client_disconnected", remaining=len(ws_clients))
 
 async def handle_telemetry_line(raw: str):
     """
@@ -801,6 +887,7 @@ async def handle_telemetry_line(raw: str):
 
     # 6) Send to UI
     payload = tel.model_dump()
+    state.last_t = payload
     await broadcast_ws(payload)
     ring.append(json.dumps({"telemetry": payload}))
 
@@ -854,6 +941,8 @@ async def sim_file_streamer(file_path: Path):
     except asyncio.CancelledError:
         log_json(event="sim_cancelled", file=str(file_path))
         raise
+    except Exception as e:
+        log_json(level="error", event="sim_file_error", error=str(e), file=str(file_path))
             
     log_json(event="sim_complete", file=str(file_path))
 
@@ -1013,15 +1102,21 @@ async def lifespan(app: FastAPI):
     
     tasks = []
     serial_thread = None
+    gps_thread = None
+
+    loop = asyncio.get_running_loop()
 
     if USE_SERVER_SERIAL:
         # Start Serial Reader Thread (this needs to be a thread because reading is blocking)
-        loop = asyncio.get_running_loop()
         serial_thread = threading.Thread(target=serial_read_thread_target, args=(loop,), daemon=True)
         serial_thread.start()
-        
+
         # Start Serial Writer Task (this can be an async task)
         tasks.append(asyncio.create_task(serial_writer_worker()))
+
+    # Start GPS Reader Thread (always runs, independent of radio serial)
+    gps_thread = threading.Thread(target=gps_reader_thread_target, args=(loop,), daemon=True)
+    gps_thread.start()
     
     # Keep the WebSocket connection alive with a ping every 10 seconds
     async def ws_ping():
@@ -1047,10 +1142,13 @@ async def lifespan(app: FastAPI):
     if all_tasks:
         await asyncio.gather(*all_tasks, return_exceptions=True)
 
-    # Signal serial thread to stop and wait.
+    # Signal serial and GPS threads to stop and wait.
     _stop_event.set()
+    _gps_stop.set()
     if serial_thread:
         serial_thread.join(timeout=2)
+    if gps_thread:
+        gps_thread.join(timeout=2)
 
 app = FastAPI(title="CanSat Ground Station (Python)", lifespan=lifespan)
 
@@ -1062,6 +1160,7 @@ async def api_dummy_start():
     if dummy_task and not dummy_task.done():
         return {"ok": False, "message": "Dummy task already running"}
     dummy_state["packet"] = 0
+    dummy_state["has_landed"] = False
     dummy_task = asyncio.create_task(dummy_data_sender())
     return {"ok": True}
 
@@ -1088,6 +1187,18 @@ async def api_health():
         "last_cmd": state.last_cmd,
         "current_a": state.last_current_a,
         "rssi_dbm": state.rssi_dbm,
+    }
+
+@app.get("/api/gs/gps")
+async def api_gs_gps():
+    """Returns the current fix from the Pi's own USB GPS (VK-172 u-blox 7)."""
+    return {
+        "lat": gs_gps.lat,
+        "lon": gs_gps.lon,
+        "alt": gs_gps.alt,
+        "sats": gs_gps.sats,
+        "fix": gs_gps.fix,
+        "ts": gs_gps.ts,
     }
 
 @app.get("/api/logs")
@@ -1124,7 +1235,6 @@ async def api_serial_set(cfg: SerialCfg):
     log_json(event="cfg_changed", port=cfg.port, baud=cfg.baud)
     
     # Force reconnect by closing current port without blocking the event loop.
-    global _serial_port
     def _do_close():
         with _serial_lock:
             global _serial_port
@@ -1280,7 +1390,11 @@ def _open_folder(path: Path):
         elif sys.platform == "darwin":
             subprocess.Popen(["open", str(path)]) # Mac
         else:
-            subprocess.Popen(["xdg-open", str(path)]) # Linux
+            import shutil
+            if shutil.which("pcmanfm"):
+                subprocess.Popen(["pcmanfm", str(path)])
+            else:
+                subprocess.Popen(["xdg-open", str(path)]) # Linux
         return True, None
     except Exception as e:
         return False, str(e)
@@ -1349,6 +1463,109 @@ async def ws_telemetry(ws: WebSocket):
         c = ws.client
         c_info = f"{c.host}:{c.port}" if c else "unknown"
         log_json(event="ws_disconnected", client=c_info)
+
+# ===================== OLED DISPLAY CONTROL =====================
+OLED_STATE_FILE = Path("/tmp/daedalus_oled.json")
+
+def _read_oled_state() -> dict:
+    try:
+        return json.loads(OLED_STATE_FILE.read_text())
+    except Exception:
+        return {}
+
+def _write_oled_state(patch: dict) -> None:
+    cur = _read_oled_state()
+    cur.update(patch)
+    OLED_STATE_FILE.write_text(json.dumps(cur))
+
+class DisplayConfig(BaseModel):
+    mode: Optional[str] = None
+    interface: Optional[str] = None
+    i2c_address: Optional[str] = None
+    telemetry_fields: Optional[list] = None
+    custom_text: Optional[str] = None
+    pixel_art: Optional[str] = None
+
+@app.get("/display", include_in_schema=False)
+async def display_panel():
+    return FileResponse(UI_DIR / "display.html")
+
+@app.get("/api/display/config")
+async def api_display_config_get():
+    """Returns current OLED display config."""
+    st = _read_oled_state()
+    st["oled_mode"] = st.get("mode", "pi_stats")
+    return st
+
+@app.post("/api/display/config")
+async def api_display_config_set(cfg: DisplayConfig):
+    """Updates OLED display config and writes state file for daemon."""
+    patch = {k: v for k, v in cfg.model_dump().items() if v is not None}
+    _write_oled_state(patch)
+    return {"ok": True}
+
+@app.get("/api/display/data")
+async def api_display_data():
+    """Returns live telemetry + Pi stats for OLED daemon to poll."""
+    import socket as _socket
+
+    # Pi stats
+    pi = {}
+    try:
+        import psutil as _ps
+        pi["cpu"]      = _ps.cpu_percent(interval=None)
+        pi["ram_pct"]  = _ps.virtual_memory().percent
+        pi["disk_pct"] = _ps.disk_usage("/").percent
+    except Exception:
+        pass
+    try:
+        pi["temp"] = int(Path("/sys/class/thermal/thermal_zone0/temp").read_text()) / 1000.0
+    except Exception:
+        pi["temp"] = 0.0
+
+    async def _get_volt():
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "vcgencmd", "measure_volts", "core",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=1.0)
+            return float(stdout.decode().strip().replace("volt=","").replace("V",""))
+        except Exception:
+            return 0.0
+
+    pi["volt"] = await _get_volt()
+
+    try:
+        s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+        s.connect(("10.255.255.255", 1))
+        pi["ip"] = s.getsockname()[0]
+        s.close()
+    except Exception:
+        pi["ip"] = "n/a"
+
+    # OLED daemon alive check
+    async def _check_oled():
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "pgrep", "-f", "oled_daemon.py",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await asyncio.wait_for(proc.communicate(), timeout=1.0)
+            return proc.returncode == 0
+        except Exception:
+            return False
+
+    oled_ok = await _check_oled()
+
+    return {
+        "pi_stats":      pi,
+        "telemetry":     state.last_t or {},
+        "oled_daemon_ok": oled_ok,
+        "oled_mode":     _read_oled_state().get("mode", "pi_stats"),
+    }
 
 # ---- Static UI ----
 @app.get("/cmd", include_in_schema=False)

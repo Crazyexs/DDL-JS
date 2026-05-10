@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OLED Display — Daedalus GCS</title>
+<style>
+:root{--bg:#0d0d0f;--panel:#17181c;--border:#2a2b30;--fg:#e2e2e6;--muted:#6b6c72;--ok:#3ecf6e;--warn:#f5a623;--err:#e94560;--accent:#4da3ff;--btn-bg:#22232a;--btn-hover:#2e2f38;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--fg);font-family:'DejaVu Sans Mono',monospace,ui-monospace;font-size:13px;min-height:100vh;padding:16px;}
+h1{font-size:16px;letter-spacing:.08em;color:var(--accent);margin-bottom:16px;display:flex;align-items:center;gap:12px;}
+h1 span{font-size:11px;color:var(--muted);font-weight:normal;}
+.layout{display:grid;grid-template-columns:1fr 300px;gap:16px;max-width:1100px;}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px;}
+.card-title{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:12px;}
+
+/* Tabs */
+.tabs{display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap;}
+.tab{padding:6px 14px;border:1px solid var(--border);border-radius:6px;cursor:pointer;background:var(--btn-bg);color:var(--muted);font:inherit;font-size:12px;transition:.15s;}
+.tab:hover{border-color:var(--accent);color:var(--fg);}
+.tab.active{background:var(--accent);border-color:var(--accent);color:#000;font-weight:600;}
+.pane{display:none;}.pane.active{display:block;}
+
+/* Controls */
+label{display:block;color:var(--muted);font-size:11px;margin-bottom:4px;margin-top:10px;}
+label:first-child{margin-top:0;}
+input[type=text],textarea,select{width:100%;background:var(--btn-bg);border:1px solid var(--border);border-radius:6px;color:var(--fg);font:inherit;padding:7px 10px;outline:none;resize:vertical;}
+input[type=text]:focus,textarea:focus,select:focus{border-color:var(--accent);}
+textarea{min-height:80px;font-size:12px;}
+.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px;}
+.field-item{display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid var(--border);border-radius:5px;cursor:pointer;background:var(--btn-bg);}
+.field-item:hover{border-color:var(--accent);}
+.field-item input{cursor:pointer;accent-color:var(--accent);}
+.field-item.selected{border-color:var(--accent);background:#0d1a2e;}
+.field-item label{color:var(--fg);font-size:11px;margin:0;cursor:pointer;}
+
+/* Buttons */
+.btn{padding:8px 18px;border-radius:6px;border:none;cursor:pointer;font:inherit;font-size:12px;transition:.15s;}
+.btn-primary{background:var(--accent);color:#000;font-weight:600;}
+.btn-primary:hover{background:#6ab8ff;}
+.btn-ghost{background:var(--btn-bg);color:var(--fg);border:1px solid var(--border);}
+.btn-ghost:hover{border-color:var(--accent);}
+.btn-danger{background:#2a1018;color:var(--err);border:1px solid #4a1020;}
+.btn-danger:hover{background:#3a1520;}
+.btn-row{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;}
+
+/* OLED Preview */
+.preview-wrap{display:flex;flex-direction:column;gap:12px;position:sticky;top:16px;}
+.oled-frame{background:#000;border:3px solid #444;border-radius:6px;padding:4px;display:inline-block;}
+#previewCanvas{display:block;image-rendering:pixelated;}
+.preview-info{font-size:10px;color:var(--muted);text-align:center;}
+.mode-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:.08em;background:var(--btn-bg);border:1px solid var(--border);}
+.status-row{display:flex;align-items:center;gap:8px;margin-top:8px;}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted);}
+.dot.ok{background:var(--ok);}
+.dot.err{background:var(--err);}
+
+/* Pixel Art Editor */
+#pixelCanvas{cursor:crosshair;image-rendering:pixelated;border:1px solid var(--border);border-radius:4px;display:block;}
+.pixel-tools{display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;}
+.tool-btn{padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--btn-bg);color:var(--fg);cursor:pointer;font:inherit;font-size:11px;}
+.tool-btn.active{border-color:var(--accent);color:var(--accent);}
+.tool-btn:hover{border-color:var(--accent);}
+.pixel-note{font-size:10px;color:var(--muted);margin-top:6px;}
+
+/* Info list */
+.info-list{display:flex;flex-direction:column;gap:6px;}
+.info-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;}
+.info-row:last-child{border-bottom:none;}
+.info-val{color:var(--ok);}
+
+a{color:var(--accent);text-decoration:none;}
+a:hover{text-decoration:underline;}
+</style>
+</head>
+<body>
+
+<h1>
+  OLED DISPLAY CONTROL
+  <span>128×64 SSD1306 — Daedalus GCS</span>
+  <a href="/" style="margin-left:auto;font-size:11px;">← Back to GCS</a>
+</h1>
+
+<div class="layout">
+<!-- ── LEFT: controls ── -->
+<div>
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('pi_stats')">Pi Stats</button>
+    <button class="tab" onclick="switchTab('telemetry')">Telemetry</button>
+    <button class="tab" onclick="switchTab('custom_text')">Custom Text</button>
+    <button class="tab" onclick="switchTab('pixel_art')">Pixel Art</button>
+  </div>
+
+  <!-- Pi Stats -->
+  <div id="pane-pi_stats" class="pane active card">
+    <div class="card-title">Pi System Stats</div>
+    <div class="info-list" id="piStatsList">
+      <div class="info-row"><span>CPU Usage</span><span class="info-val" id="pi-cpu">—</span></div>
+      <div class="info-row"><span>RAM Usage</span><span class="info-val" id="pi-ram">—</span></div>
+      <div class="info-row"><span>Disk Usage</span><span class="info-val" id="pi-disk">—</span></div>
+      <div class="info-row"><span>CPU Temp</span><span class="info-val" id="pi-temp">—</span></div>
+      <div class="info-row"><span>Core Voltage</span><span class="info-val" id="pi-volt">—</span></div>
+      <div class="info-row"><span>IP Address</span><span class="info-val" id="pi-ip">—</span></div>
+    </div>
+    <p style="color:var(--muted);font-size:11px;margin-top:12px;">This is the default mode shown on the OLED after boot. No configuration needed.</p>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="applyMode('pi_stats')">Set Display → Pi Stats</button>
+    </div>
+  </div>
+
+  <!-- Telemetry -->
+  <div id="pane-telemetry" class="pane card">
+    <div class="card-title">Telemetry Display — pick up to 4 fields</div>
+    <p style="color:var(--muted);font-size:11px;margin-bottom:10px;">Selected fields scroll on the OLED in real time from live CanSat data.</p>
+    <div class="field-grid" id="fieldGrid"></div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="applyTelemetry()">Set Display → Telemetry</button>
+      <button class="btn btn-ghost"   onclick="clearFields()">Clear All</button>
+    </div>
+  </div>
+
+  <!-- Custom Text -->
+  <div id="pane-custom_text" class="pane card">
+    <div class="card-title">Custom Text</div>
+    <label>Text to display (use Enter for new lines, max 6 lines)</label>
+    <textarea id="customTextInput" rows="5" placeholder="Type anything…&#10;Name, message, call sign&#10;e.g. TEAM DAEDALUS"></textarea>
+    <p style="color:var(--muted);font-size:11px;margin-top:8px;">Font size auto-scales to fit. Shorter text = larger font.</p>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="applyCustomText()">Set Display → Custom Text</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('customTextInput').value=''">Clear</button>
+    </div>
+  </div>
+
+  <!-- Pixel Art -->
+  <div id="pane-pixel_art" class="pane card">
+    <div class="card-title">Pixel Art Editor — 128×64</div>
+    <div class="pixel-tools">
+      <button class="tool-btn active" id="tool-draw" onclick="setTool('draw')">✏ Draw</button>
+      <button class="tool-btn" id="tool-erase" onclick="setTool('erase')">✕ Erase</button>
+      <button class="tool-btn" onclick="clearPixels()">Clear All</button>
+      <button class="tool-btn" onclick="invertPixels()">Invert</button>
+      <label style="margin:0;cursor:pointer;">
+        <span class="tool-btn">⬆ Upload Image</span>
+        <input type="file" id="imgUpload" accept="image/*" style="display:none" onchange="loadImage(event)">
+      </label>
+    </div>
+    <canvas id="pixelCanvas" width="512" height="256"></canvas>
+    <p class="pixel-note">Left-click / drag = draw &nbsp;|&nbsp; Right-click / drag = erase &nbsp;|&nbsp; Images auto-convert to 1-bit</p>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="applyPixelArt()">Set Display → Pixel Art</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── RIGHT: preview & status ── -->
+<div class="preview-wrap">
+  <div class="card">
+    <div class="card-title">OLED Preview</div>
+    <div class="oled-frame">
+      <canvas id="previewCanvas" width="256" height="128"></canvas>
+    </div>
+    <div class="preview-info" style="margin-top:8px;">
+      Current mode: <span class="mode-badge" id="modeBadge">—</span>
+    </div>
+    <div class="status-row">
+      <div class="dot" id="oledDot"></div>
+      <span id="oledStatus" style="font-size:11px;color:var(--muted);">Checking daemon…</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Interface Config</div>
+    <label>Display Interface</label>
+    <select id="ifaceSelect">
+      <option value="spi">SPI (R4 pad — SPI0)</option>
+      <option value="i2c">I²C (R3/R5 pads — GPIO2/3)</option>
+    </select>
+    <label style="margin-top:10px;">I²C Address</label>
+    <select id="addrSelect">
+      <option value="0x3C">0x3C (most common)</option>
+      <option value="0x3D">0x3D (alternate)</option>
+    </select>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="saveIfaceConfig()">Save Interface</button>
+    </div>
+  </div>
+</div>
+</div><!-- /layout -->
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let currentMode = 'pi_stats';
+let selectedFields = [];
+let pixelData = new Uint8Array(128 * 64); // 1 = white, 0 = black
+let drawTool = 'draw';
+let isDrawing = false;
+
+// All GCS telemetry fields with friendly labels
+const FIELDS = [
+  {key:'state',         label:'Mission State'},
+  {key:'altitude_m',   label:'Altitude (m)'},
+  {key:'temperature_c',label:'Temperature (°C)'},
+  {key:'pressure_kpa', label:'Pressure (kPa)'},
+  {key:'voltage_v',    label:'Voltage (V)'},
+  {key:'current_a',    label:'Current (A)'},
+  {key:'packet_count', label:'Packet Count'},
+  {key:'mission_time', label:'Mission Time'},
+  {key:'mode',         label:'Mode'},
+  {key:'gps_lat',      label:'GPS Latitude'},
+  {key:'gps_lon',      label:'GPS Longitude'},
+  {key:'gps_altitude_m',label:'GPS Altitude (m)'},
+  {key:'gps_sats',     label:'GPS Satellites'},
+  {key:'gps_time',     label:'GPS Time'},
+  {key:'gyro_r_dps',   label:'Gyro Roll (°/s)'},
+  {key:'gyro_p_dps',   label:'Gyro Pitch (°/s)'},
+  {key:'gyro_y_dps',   label:'Gyro Yaw (°/s)'},
+  {key:'accel_r_dps2', label:'Accel Roll'},
+  {key:'accel_p_dps2', label:'Accel Pitch'},
+  {key:'accel_y_dps2', label:'Accel Yaw'},
+  {key:'yaw',          label:'Heading (Yaw°)'},
+  {key:'heading_gps',  label:'GPS Heading'},
+  {key:'tof',          label:'ToF Distance'},
+  {key:'velocity_e',   label:'Velocity East'},
+  {key:'velocity_n',   label:'Velocity North'},
+  {key:'arm_state',    label:'Arm State'},
+  {key:'deploy',       label:'Deploy State'},
+  {key:'servo1_angle', label:'Servo 1 Angle'},
+  {key:'servo2_angle', label:'Servo 2 Angle'},
+  {key:'servo3_angle', label:'Servo 3 Angle'},
+  {key:'cmd_echo',     label:'Last Command'},
+  {key:'gs_ts_utc',    label:'GS Timestamp'},
+  {key:'gs_rx_count',  label:'RX Count'},
+  {key:'gs_loss_total',label:'Loss Total'},
+];
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function switchTab(mode) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => {
+    if (t.textContent.toLowerCase().replace(/\s+/g,'_') === mode ||
+        t.getAttribute('onclick')?.includes(mode)) t.classList.add('active');
+  });
+  const pane = document.getElementById('pane-' + mode);
+  if (pane) pane.classList.add('active');
+  currentMode = mode;
+  refreshPreview();
+}
+
+// ── Field grid ────────────────────────────────────────────────────────────────
+function buildFieldGrid() {
+  const grid = document.getElementById('fieldGrid');
+  grid.innerHTML = '';
+  FIELDS.forEach(f => {
+    const div = document.createElement('div');
+    div.className = 'field-item' + (selectedFields.includes(f.key) ? ' selected' : '');
+    div.dataset.key = f.key;
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.id = 'f_' + f.key;
+    cb.checked = selectedFields.includes(f.key);
+    cb.addEventListener('change', () => toggleField(f.key, cb));
+    const lbl = document.createElement('label');
+    lbl.htmlFor = cb.id;
+    lbl.textContent = f.label;
+    div.appendChild(cb);
+    div.appendChild(lbl);
+    div.addEventListener('click', e => { if (e.target !== cb) { cb.checked = !cb.checked; toggleField(f.key, cb); } });
+    grid.appendChild(div);
+  });
+}
+
+function toggleField(key, cb) {
+  if (cb.checked) {
+    if (selectedFields.length >= 4) {
+      cb.checked = false;
+      return;
+    }
+    if (!selectedFields.includes(key)) selectedFields.push(key);
+  } else {
+    selectedFields = selectedFields.filter(k => k !== key);
+  }
+  buildFieldGrid();
+  refreshPreview();
+}
+
+function clearFields() {
+  selectedFields = [];
+  buildFieldGrid();
+}
+
+// ── Pixel Art ─────────────────────────────────────────────────────────────────
+const PIXEL_SCALE = 4; // 4px per OLED pixel
+
+function getPixelCanvas() { return document.getElementById('pixelCanvas'); }
+
+function initPixelCanvas() {
+  const c = getPixelCanvas();
+  c.width  = 128 * PIXEL_SCALE;
+  c.height = 64  * PIXEL_SCALE;
+  redrawPixels();
+
+  const getPos = (e) => {
+    const r = c.getBoundingClientRect();
+    const scaleX = 128 / r.width;
+    const scaleY = 64  / r.height;
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    const cy = e.touches ? e.touches[0].clientY : e.clientY;
+    return [
+      Math.floor((cx - r.left) * scaleX),
+      Math.floor((cy - r.top)  * scaleY),
+    ];
+  };
+
+  const paint = (e) => {
+    e.preventDefault();
+    const [px, py] = getPos(e);
+    if (px < 0 || px >= 128 || py < 0 || py >= 64) return;
+    const tool = e.buttons === 2 ? 'erase' : drawTool;
+    pixelData[py * 128 + px] = tool === 'erase' ? 0 : 1;
+    redrawPixels();
+  };
+
+  c.addEventListener('mousedown',  e => { isDrawing = true; paint(e); });
+  c.addEventListener('mousemove',  e => { if (isDrawing) paint(e); });
+  c.addEventListener('mouseup',    () => isDrawing = false);
+  c.addEventListener('mouseleave', () => isDrawing = false);
+  c.addEventListener('contextmenu', e => e.preventDefault());
+  c.addEventListener('touchstart', e => { isDrawing = true; paint(e); }, {passive:false});
+  c.addEventListener('touchmove',  e => { if (isDrawing) paint(e); }, {passive:false});
+  c.addEventListener('touchend',   () => isDrawing = false);
+}
+
+function redrawPixels() {
+  const c = getPixelCanvas();
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = '#fff';
+  for (let y = 0; y < 64; y++) {
+    for (let x = 0; x < 128; x++) {
+      if (pixelData[y * 128 + x]) {
+        ctx.fillRect(x * PIXEL_SCALE, y * PIXEL_SCALE, PIXEL_SCALE - 1, PIXEL_SCALE - 1);
+      }
+    }
+  }
+}
+
+function setTool(t) {
+  drawTool = t;
+  document.getElementById('tool-draw').classList.toggle('active', t === 'draw');
+  document.getElementById('tool-erase').classList.toggle('active', t === 'erase');
+}
+
+function clearPixels() {
+  pixelData.fill(0);
+  redrawPixels();
+}
+
+function invertPixels() {
+  for (let i = 0; i < pixelData.length; i++) pixelData[i] = pixelData[i] ? 0 : 1;
+  redrawPixels();
+}
+
+function loadImage(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      // Draw to a 128x64 offscreen canvas, then read pixels
+      const off = document.createElement('canvas');
+      off.width = 128; off.height = 64;
+      const ctx = off.getContext('2d');
+      ctx.drawImage(img, 0, 0, 128, 64);
+      const id = ctx.getImageData(0, 0, 128, 64);
+      for (let i = 0; i < 128 * 64; i++) {
+        // Convert to grayscale → 1-bit (threshold 128)
+        const r = id.data[i * 4];
+        const g = id.data[i * 4 + 1];
+        const b = id.data[i * 4 + 2];
+        pixelData[i] = (0.299 * r + 0.587 * g + 0.114 * b) > 128 ? 1 : 0;
+      }
+      redrawPixels();
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+}
+
+function pixelsToB64Png() {
+  const off = document.createElement('canvas');
+  off.width = 128; off.height = 64;
+  const ctx = off.getContext('2d');
+  const id = ctx.createImageData(128, 64);
+  for (let i = 0; i < 128 * 64; i++) {
+    const v = pixelData[i] ? 255 : 0;
+    id.data[i*4]=v; id.data[i*4+1]=v; id.data[i*4+2]=v; id.data[i*4+3]=255;
+  }
+  ctx.putImageData(id, 0, 0);
+  return off.toDataURL('image/png').replace('data:image/png;base64,', '');
+}
+
+// ── OLED Preview ──────────────────────────────────────────────────────────────
+const PREVIEW_SCALE = 2;
+
+function refreshPreview() {
+  const c = document.getElementById('previewCanvas');
+  c.width  = 128 * PREVIEW_SCALE;
+  c.height = 64  * PREVIEW_SCALE;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = '#cef';
+  ctx.font = `${8 * PREVIEW_SCALE}px monospace`;
+
+  if (currentMode === 'pi_stats') {
+    drawPreviewPiStats(ctx);
+  } else if (currentMode === 'telemetry') {
+    drawPreviewTelemetry(ctx);
+  } else if (currentMode === 'custom_text') {
+    drawPreviewCustomText(ctx);
+  } else if (currentMode === 'pixel_art') {
+    drawPreviewPixelArt(ctx);
+  }
+}
+
+function px(n) { return n * PREVIEW_SCALE; }
+
+function drawPreviewPiStats(ctx) {
+  const s = PREVIEW_SCALE;
+  ctx.font = `${7*s}px monospace`;
+  ctx.fillText('Pi STATS', px(0), px(9));
+  ctx.fillText('T:--°C', px(60), px(9));
+  ctx.fillRect(0, px(10), px(128), 1*s);
+  ctx.fillText('CPU  --%', px(0), px(21));
+  ctx.strokeStyle='#cef'; ctx.lineWidth=1;
+  ctx.strokeRect(px(58), px(13), px(68), px(8));
+  ctx.fillText('RAM  --%', px(0), px(33));
+  ctx.strokeRect(px(58), px(25), px(68), px(8));
+  ctx.fillText('DSK  --%', px(0), px(45));
+  ctx.strokeRect(px(58), px(37), px(68), px(8));
+  ctx.fillRect(0, px(49), px(128), 1*s);
+  ctx.fillText('--V  ---.---.---.---', px(0), px(61));
+}
+
+function drawPreviewTelemetry(ctx) {
+  const fields = selectedFields.slice(0, 4);
+  if (!fields.length) {
+    ctx.font = `${8*PREVIEW_SCALE}px monospace`;
+    ctx.fillText('No fields', px(18), px(28));
+    ctx.fillText('set yet', px(22), px(40));
+    return;
+  }
+  const rh = 64 / fields.length;
+  const s = PREVIEW_SCALE;
+  fields.forEach((key, i) => {
+    const y = i * rh;
+    const label = key.replace(/_/g,' ').toUpperCase();
+    ctx.font = `${6*s}px monospace`;
+    ctx.fillText(label.slice(0,18), px(0), px(y + 8));
+    ctx.font = `${[12,10,8,8][fields.length-1]*s}px monospace`;
+    ctx.fillText('—', px(2), px(y + 10 + [12,10,8,7][fields.length-1]));
+    if (i < fields.length-1) ctx.fillRect(0, px(y + rh - 1), px(128), 1);
+  });
+}
+
+function drawPreviewCustomText(ctx) {
+  const raw = document.getElementById('customTextInput')?.value || '';
+  const lines = (raw || 'No text set').split('\n').slice(0, 6);
+  const s = PREVIEW_SCALE;
+  const fsize = lines.length === 1 && lines[0].length <= 10 ? 14
+              : lines.length <= 2 ? 12
+              : lines.length <= 4 ? 8 : 7;
+  ctx.font = `${fsize*s}px monospace`;
+  const lh = fsize * s * 1.2;
+  const total = lh * lines.length;
+  const y0 = Math.max(0, (px(64) - total) / 2);
+  lines.forEach((line, i) => {
+    const tw = ctx.measureText(line).width;
+    const x = Math.max(0, (px(128) - tw) / 2);
+    ctx.fillText(line.slice(0, 18), x, y0 + i * lh + lh);
+  });
+}
+
+function drawPreviewPixelArt(ctx) {
+  for (let y = 0; y < 64; y++) {
+    for (let x = 0; x < 128; x++) {
+      if (pixelData[y * 128 + x]) {
+        ctx.fillRect(x * PREVIEW_SCALE, y * PREVIEW_SCALE, PREVIEW_SCALE, PREVIEW_SCALE);
+      }
+    }
+  }
+}
+
+// Update preview when custom text changes
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('customTextInput')?.addEventListener('input', refreshPreview);
+});
+
+// ── API calls ─────────────────────────────────────────────────────────────────
+async function post(url, body) {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  });
+  return r.json();
+}
+
+async function applyMode(mode) {
+  await post('/api/display/config', {mode});
+  document.getElementById('modeBadge').textContent = mode.replace('_',' ').toUpperCase();
+  refreshPreview();
+}
+
+async function applyTelemetry() {
+  if (!selectedFields.length) { alert('Select at least one field.'); return; }
+  await post('/api/display/config', {mode:'telemetry', telemetry_fields: selectedFields});
+  document.getElementById('modeBadge').textContent = 'TELEMETRY';
+  refreshPreview();
+}
+
+async function applyCustomText() {
+  const text = document.getElementById('customTextInput').value.trim();
+  if (!text) { alert('Enter some text first.'); return; }
+  await post('/api/display/config', {mode:'custom_text', custom_text: text});
+  document.getElementById('modeBadge').textContent = 'CUSTOM TEXT';
+  refreshPreview();
+}
+
+async function applyPixelArt() {
+  const b64 = pixelsToB64Png();
+  await post('/api/display/config', {mode:'pixel_art', pixel_art: b64});
+  document.getElementById('modeBadge').textContent = 'PIXEL ART';
+  refreshPreview();
+}
+
+async function saveIfaceConfig() {
+  const iface = document.getElementById('ifaceSelect').value;
+  const addr  = document.getElementById('addrSelect').value;
+  await post('/api/display/config', {interface: iface, i2c_address: addr});
+  alert('Interface saved. Restart the OLED daemon for changes to take effect.');
+}
+
+// ── Pi stats live poll ────────────────────────────────────────────────────────
+async function pollPiStats() {
+  try {
+    const d = await fetch('/api/display/data').then(r => r.json());
+    const s = d.pi_stats || {};
+    const set = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
+    set('pi-cpu',  s.cpu  != null ? s.cpu.toFixed(1)  + ' %'  : '—');
+    set('pi-ram',  s.ram_pct != null ? s.ram_pct.toFixed(1) + ' %' : '—');
+    set('pi-disk', s.disk_pct != null ? s.disk_pct.toFixed(1) + ' %' : '—');
+    set('pi-temp', s.temp != null ? s.temp.toFixed(1) + ' °C' : '—');
+    set('pi-volt', s.volt != null ? s.volt.toFixed(2) + ' V'  : '—');
+    set('pi-ip',   s.ip  || '—');
+
+    // OLED daemon status
+    const ok = d.oled_daemon_ok;
+    const dot = document.getElementById('oledDot');
+    const stat = document.getElementById('oledStatus');
+    if (dot && stat) {
+      dot.className = 'dot ' + (ok ? 'ok' : 'err');
+      stat.textContent = ok ? 'OLED daemon running' : 'OLED daemon not found';
+    }
+    // Current mode badge
+    if (d.oled_mode) {
+      document.getElementById('modeBadge').textContent = d.oled_mode.replace(/_/g,' ').toUpperCase();
+    }
+    if (currentMode === 'pi_stats') refreshPreview();
+  } catch(_) {}
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  buildFieldGrid();
+  initPixelCanvas();
+  refreshPreview();
+  pollPiStats();
+  setInterval(pollPiStats, 2000);
+
+  // Load existing state from server
+  fetch('/api/display/config').then(r=>r.json()).then(cfg => {
+    if (!cfg) return;
+    if (cfg.telemetry_fields) { selectedFields = cfg.telemetry_fields; buildFieldGrid(); }
+    if (cfg.custom_text) document.getElementById('customTextInput').value = cfg.custom_text;
+    if (cfg.interface) document.getElementById('ifaceSelect').value = cfg.interface;
+    if (cfg.oled_mode) document.getElementById('modeBadge').textContent = cfg.oled_mode.replace(/_/g,' ').toUpperCase();
+  }).catch(()=>{});
+});
+</script>
+</body>
+</html>
