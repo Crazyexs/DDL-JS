@@ -802,11 +802,18 @@ async def broadcast_ws(payload: dict):
 
 async def handle_telemetry_line(raw: str):
     """
-    This is the core function that handles each line of data received.
-    It uses 'TELEMETRY_CONFIG' to know which column is which.
+    Core function that handles each line of data received from the CanSat.
+    Saves the raw line unconditionally FIRST, then parses it for the UI.
     """
 
-    # ── STEP 0: Parse fields ──────────────────────────────────────────────────
+    # ── STEP 0: Save RAW line unconditionally ────────────────────────────────
+    # Every byte the CanSat sends is written to disk immediately, before any
+    # parsing or validation. Nothing is ever discarded or lost.
+    if state.csv_ready:
+        async with aiofiles.open(get_active_csv(), "a", encoding="utf-8", newline="") as f:
+            await f.write(raw + "\r\n")
+
+    # ── STEP 1: Parse fields for UI display ──────────────────────────────
     reader = csv.reader([raw], skipinitialspace=True)
     try:
         parts = next(reader)
@@ -815,18 +822,12 @@ async def handle_telemetry_line(raw: str):
 
     parts = [p.strip() for p in parts]
 
-    # Validate minimum required fields BEFORE saving to CSV.
-    # This prevents partial/corrupt packets from corrupting the log file.
+    # If the packet has too few fields, show it in the UI log and stop here.
+    # The raw data is already saved to CSV above so nothing is lost.
     min_required = len([x for x in TELEMETRY_CONFIG if not x.get("optional", False)])
     if len(parts) < min_required:
         ring.append(json.dumps({"bad_line": raw}))
         return
-
-    # ── STEP 1: Save validated raw line to CSV ────────────────────────────────
-    # Only runs after we confirm the packet has the correct number of fields.
-    if state.csv_ready:
-        async with aiofiles.open(get_active_csv(), "a", encoding="utf-8", newline="") as f:
-            await f.write(raw + "\r\n")
 
     parsed_data = {}
     for i, cfg in enumerate(TELEMETRY_CONFIG):

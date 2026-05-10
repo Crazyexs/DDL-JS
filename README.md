@@ -170,3 +170,104 @@ All commands are sent via the Quick Command dropdown or the manual input box in 
 | `CAL,TOF,<mm>` | Calibrate VL53L1X ToF sensor (distance in mm) |
 | `CAL,MAG,RESET` | Reset magnetometer calibration |
 | `/dummy.on` / `/dummy.off` | Start / stop local dummy data (GCS only) |
+
+---
+
+## Raspberry Pi Setup
+
+This section covers deploying the GCS on a Raspberry Pi with the KMR-1.44 SPI V2 (ST7735) status display and full auto-start on boot.
+
+### Wiring the KMR-1.44 SPI V2 Screen
+
+Connect the screen to the Raspberry Pi GPIO header as follows:
+
+| Screen Pin | Raspberry Pi Pin | Description |
+|---|---|---|
+| VCC | Pin 2 or 4 (5V) | Power (use 5V for full brightness) |
+| GND | Pin 6 (GND) | Ground |
+| CS | Pin 24 (GPIO 8 / CE0) | SPI Chip Select |
+| RESET | Pin 22 (GPIO 25) | Reset |
+| A0 / DC | Pin 18 (GPIO 24) | Data / Command |
+| SDA | Pin 19 (GPIO 10 / MOSI) | SPI Data |
+| SCK | Pin 23 (GPIO 11 / SCLK) | SPI Clock |
+| LED | Pin 12 (GPIO 18) | Backlight (software-controlled) |
+
+If you connect LED directly to 3.3V instead of GPIO 18, open `oled/oled_daemon.py` and change `BACKLIGHT = 18` to `BACKLIGHT = None`.
+
+### Enable SPI on the Pi
+
+SPI must be enabled before the screen will work. Run this once:
+
+```bash
+sudo raspi-config
+```
+
+Go to: **3 Interface Options** → **I4 SPI** → **Yes** → Finish → Reboot.
+
+### Pi Installation Steps
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/Crazyexs/DDL-JS.git
+cd DDL-JS
+
+# 2. Create and activate a virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# 3. Install all dependencies (includes st7735 screen driver)
+pip install -r requirements.txt
+```
+
+### Auto-Start on Boot (systemd)
+
+The file `scripts/daedalus.service` configures the GCS to start automatically every time the Raspberry Pi boots, with no manual steps required.
+
+**Install the service once:**
+
+```bash
+sudo cp scripts/daedalus.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now daedalus
+```
+
+The GCS will now start automatically on every boot. The server also automatically:
+- Detects and connects to your XBee radio (first available `/dev/ttyUSB*` port)
+- Launches the ST7735 status screen daemon
+- Starts saving all telemetry to CSV
+
+### Managing the Service
+
+| Command | What it does |
+|---|---|
+| `sudo systemctl status daedalus` | Check if the GCS is running |
+| `journalctl -u daedalus -f` | Watch live logs |
+| `sudo systemctl restart daedalus` | Restart the GCS |
+| `sudo systemctl stop daedalus` | Stop the GCS |
+| `sudo systemctl disable daedalus` | Disable auto-start on boot |
+
+### Accessing the Dashboard from Another Device
+
+Once the service is running, find the Pi's IP address:
+
+```bash
+hostname -I
+```
+
+Then open a browser on any device on the same Wi-Fi network and go to:
+
+**http://<Pi-IP-address>:8080**
+
+For example: `http://192.168.1.42:8080`
+
+---
+
+## Data Logging
+
+The GCS saves every single byte received from the CanSat to a CSV file the moment it arrives, before any parsing or validation. This means no data is ever lost, even if a packet is malformed or incomplete.
+
+- **Main log file:** `data/Flight_1043.csv`
+- **Display control page:** `http://localhost:8080/display`
+
+The CSV file is created automatically when the server starts. Each row in the file is exactly the raw string received from the CanSat over the radio, in the order it was received.
+
