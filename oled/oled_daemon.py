@@ -3,54 +3,61 @@
 Daedalus GCS — LCD Display Daemon
 128x128 ST7735 (KMR-1.44 SPI V2) via SPI
 
-SPI mode   (standard SPI0 pins)
+Uses the 'st7735' pip package (Pimoroni-compatible) which has the correct
+initialization sequence for cheap Chinese KMR-1441 modules and properly
+drives the backlight GPIO pin for full brightness.
 
-Modes:
-  startup      Boot animation + 4 status checks  [auto on launch]
-  pi_stats     CPU / RAM / Temp / Voltage         [default after boot]
-  telemetry    Live CanSat values picked in /display
-  custom_text  User-typed message from /display
-  pixel_art    128x128 image pushed from /display
+Wiring (matches your KMR-1441 V2):
+  VCC    → Pin 2 or 4  (5V — feeds the onboard regulator for full brightness)
+  GND    → Pin 6       (Ground)
+  CS     → Pin 24      (GPIO 8 / CE0)
+  RESET  → Pin 22      (GPIO 25)
+  A0/DC  → Pin 18      (GPIO 24)
+  SDA    → Pin 19      (GPIO 10 / MOSI)
+  SCK    → Pin 23      (GPIO 11 / SCLK)
+  LED    → Pin 18      (GPIO 18 / PWM) — daemon drives this for full brightness
+           OR connect directly to 3.3V if you don't want software backlight control
 
 State file : /tmp/daedalus_lcd.json   (written by GCS backend)
 GCS API    : http://127.0.0.1:8080     (polled for live telemetry)
 """
 
 import sys
-import os
 import time
 import json
 import logging
-import subprocess
 import urllib.request
-import urllib.error
 from pathlib import Path
+from io import BytesIO
+import base64
 
 import psutil
 from PIL import Image, ImageDraw, ImageFont
 
-# ── luma.lcd ────────────────────────────────────────────────────────────────
+# ── Display library (st7735 pip package) ──────────────────────────────────────
+# Install: pip install st7735
+# This library has the correct init sequence for KMR-1441 V2 (black PCB)
 try:
-    from luma.core.interface.serial import spi
-    from luma.lcd.device import st7735
-    LUMA_OK = True
+    import st7735
+    ST7735_OK = True
 except ImportError:
-    LUMA_OK = False
+    ST7735_OK = False
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 GCS_URL    = "http://127.0.0.1:8080"
 STATE_FILE = Path("/tmp/daedalus_lcd.json")
 WIDTH, HEIGHT = 128, 128
 
-# SPI defaults
-SPI_DEVICE  = 0
+# GPIO pin numbers (BCM mode)
 SPI_PORT    = 0
-SPI_DC_PIN  = 24
-SPI_RST_PIN = 25
+SPI_CS      = 0          # CE0 = GPIO 8 = Pin 24
+DC_PIN      = 24         # GPIO 24 = Pin 18 (A0 on your screen)
+RST_PIN     = 25         # GPIO 25 = Pin 22 (RESET on your screen)
+BACKLIGHT   = 18         # GPIO 18 = Pin 12 (connect LED pin here for software control)
+                         # If LED is wired to 3.3V directly, set BACKLIGHT = None
 
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 MONO_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
-GPS_FIX_TIMEOUT = 5
 
 logging.basicConfig(
     level=logging.INFO,
@@ -69,7 +76,7 @@ def _font(size: int, mono: bool = False) -> ImageFont.ImageFont:
         return ImageFont.load_default()
 
 
-# Pre-load sizes we actually use
+# Pre-load fonts
 F8  = _font(8)
 F9  = _font(9)
 F10 = _font(10)
@@ -78,23 +85,32 @@ F16 = _font(16)
 F20 = _font(20)
 FM8 = _font(8,  mono=True)
 FM9 = _font(9,  mono=True)
-FM10= _font(10, mono=True)
 
 
 # ── Display init ──────────────────────────────────────────────────────────────
 def init_display():
-    if not LUMA_OK:
-        log.error("luma.lcd not installed — run: pip install luma.lcd")
+    if not ST7735_OK:
+        log.error("st7735 library not installed — run: pip install st7735")
         return None
     try:
-        ser = spi(device=SPI_DEVICE, port=SPI_PORT,
-                  gpio_DC=SPI_DC_PIN, gpio_RST=SPI_RST_PIN)
-        # Some ST7735 are BGR, some are RGB. Use bgr=True as it's common.
-        dev = st7735(ser, width=WIDTH, height=HEIGHT, bgr=True)
-        log.info(f"LCD ready (SPI, {WIDTH}x{HEIGHT})")
+        dev = st7735.ST7735(
+            port=SPI_PORT,
+            cs=st7735.BG_SPI_CS_FRONT if SPI_CS == 1 else st7735.BG_SPI_CS_BACK,
+            dc=DC_PIN,
+            rst=RST_PIN,
+            backlight=BACKLIGHT,          # None = backlight always on via hardware
+            width=WIDTH,
+            height=HEIGHT,
+            offset_left=0,               # Try 2 if image is shifted right
+            offset_top=0,                # Try 2 if image is shifted down
+            rotation=0,
+            invert=False,
+        )
+        dev.begin()
+        log.info(f"ST7735 ready ({WIDTH}x{HEIGHT}) on SPI{SPI_PORT}, CS={SPI_CS}, DC=GPIO{DC_PIN}, RST=GPIO{RST_PIN}, BL=GPIO{BACKLIGHT}")
         return dev
     except Exception as e:
-        log.error(f"LCD init failed: {e}")
+        log.error(f"ST7735 init failed: {e}")
         return None
 
 
@@ -108,20 +124,23 @@ def read_state() -> dict:
     try:
         mtime = STATE_FILE.stat().st_mtime
         if mtime != _state_mtime:
-            _state_mtime = mtime
             _state_cache = json.loads(STATE_FILE.read_text())
+            _state_mtime = mtime
     except Exception:
         pass
     return _state_cache
 
 
 def write_state(patch: dict) -> None:
-    cur = read_state().copy()
-    cur.update(patch)
-    STATE_FILE.write_text(json.dumps(cur))
+    global _state_cache
+    _state_cache.update(patch)
+    try:
+        STATE_FILE.write_text(json.dumps(_state_cache))
+    except Exception:
+        pass
 
 
-# ── System stats ──────────────────────────────────────────────────────────────
+# ── Pi stats ──────────────────────────────────────────────────────────────────
 def pi_stats() -> dict:
     cpu  = psutil.cpu_percent(interval=None)
     mem  = psutil.virtual_memory()
@@ -129,22 +148,15 @@ def pi_stats() -> dict:
 
     temp = 0.0
     try:
-        raw = Path("/sys/class/thermal/thermal_zone0/temp").read_text()
-        temp = int(raw.strip()) / 1000.0
+        temp = int(Path("/sys/class/thermal/thermal_zone0/temp").read_text()) / 1000.0
     except Exception:
-        try:
-            for vals in (psutil.sensors_temperatures() or {}).values():
-                if vals:
-                    temp = vals[0].current
-                    break
-        except Exception:
-            pass
+        pass
 
     volt = 0.0
     try:
-        out = subprocess.check_output(
-            ["vcgencmd", "measure_volts", "core"], timeout=1, text=True
-        )
+        import subprocess
+        out = subprocess.check_output(["vcgencmd", "measure_volts", "core"],
+                                      timeout=1, text=True)
         volt = float(out.strip().replace("volt=", "").replace("V", ""))
     except Exception:
         pass
@@ -160,12 +172,12 @@ def pi_stats() -> dict:
         pass
 
     return {
-        "cpu": cpu,
-        "ram_pct": mem.percent,
+        "cpu":      cpu,
+        "ram_pct":  mem.percent,
         "disk_pct": disk.percent,
-        "temp": temp,
-        "volt": volt,
-        "ip": ip,
+        "temp":     temp,
+        "volt":     volt,
+        "ip":       ip,
     }
 
 
@@ -193,9 +205,13 @@ def fetch_telemetry() -> dict:
 
 # ── Drawing helpers ───────────────────────────────────────────────────────────
 def new_img() -> tuple:
-    # ST7735 can use RGB for colors. For simplicity, we stick to "RGB".
     img = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
     return img, ImageDraw.Draw(img)
+
+
+def send(device, img: Image.Image) -> None:
+    """Push a PIL image to the st7735 device."""
+    device.display(img)
 
 
 def hbar(draw, x: int, y: int, w: int, h: int, pct: float) -> None:
@@ -205,27 +221,19 @@ def hbar(draw, x: int, y: int, w: int, h: int, pct: float) -> None:
         draw.rectangle([x + 1, y + 1, x + filled, y + h - 2], fill=(255, 255, 255))
 
 
-def text_w(draw, text: str, font) -> int:
-    try:
-        return draw.textbbox((0, 0), text, font=font)[2]
-    except AttributeError:
-        return len(text) * 6
-
-
 # ── Render: startup title ─────────────────────────────────────────────────────
 def render_title(device) -> None:
     img, d = new_img()
-    d.text((8, 24), "DAEDALUS GCS", font=F12, fill=(255, 255, 255))
-    d.line([(0, 44), (127, 44)], fill=(255, 255, 255))
+    d.text((8, 24),  "DAEDALUS GCS", font=F12,  fill=(255, 255, 255))
+    d.line([(0, 44),  (127, 44)],               fill=(255, 255, 255))
     d.text((18, 52), "Ground Station", font=F9, fill=(255, 255, 255))
-    d.line([(0, 75), (127, 75)], fill=(255, 255, 255))
-    d.text((30, 83), "Booting...", font=F9, fill=(255, 255, 255))
-    device.display(img)
+    d.line([(0, 75),  (127, 75)],               fill=(255, 255, 255))
+    d.text((30, 83), "Booting...",    font=F9,  fill=(255, 255, 255))
+    send(device, img)
 
 
 # ── Render: status checks ─────────────────────────────────────────────────────
 def render_checks(device, results: list) -> None:
-    """results = [(label, True|False|None), ...]  None = pending"""
     img, d = new_img()
     d.text((0, 4), "SYSTEM CHECK", font=FM8, fill=(255, 255, 255))
     d.line([(0, 16), (127, 16)], fill=(255, 255, 255))
@@ -234,107 +242,107 @@ def render_checks(device, results: list) -> None:
         d.text((2, y), label, font=FM8, fill=(255, 255, 255))
         if ok is None:
             badge = "[......]"
-            color = (255, 255, 0) # yellow for pending
         elif ok:
             badge = "[  OK  ]"
-            color = (0, 255, 0) # green for ok
         else:
             badge = "[ FAIL ]"
-            color = (255, 0, 0) # red for fail
         d.text((78, y), badge, font=FM8, fill=(255, 255, 255))
-    device.display(img)
+    send(device, img)
 
 
 # ── Render: Pi stats ──────────────────────────────────────────────────────────
 def render_pi_stats(device, s: dict) -> None:
     img, d = new_img()
-    # Header
-    d.text((0, 4), "Pi STATS", font=FM8, fill=(255, 255, 255))
-    d.text((75, 4), f"T:{s['temp']:.0f}°C", font=FM8, fill=(255, 255, 255))
-    d.line([(0, 16), (127, 16)], fill=(255, 255, 255))
-    # CPU
-    d.text((0, 26), f"CPU {s['cpu']:4.0f}%", font=FM8, fill=(255, 255, 255))
-    hbar(d, 62, 27, 64, 8, s["cpu"])
-    # RAM
-    d.text((0, 46), f"RAM {s['ram_pct']:4.0f}%", font=FM8, fill=(255, 255, 255))
-    hbar(d, 62, 47, 64, 8, s["ram_pct"])
-    # Disk
-    d.text((0, 66), f"DSK {s['disk_pct']:4.0f}%", font=FM8, fill=(255, 255, 255))
-    hbar(d, 62, 67, 64, 8, s["disk_pct"])
-    # Footer
-    d.line([(0, 96), (127, 96)], fill=(255, 255, 255))
-    d.text((0, 102), f"{s['volt']:.2f}V", font=FM8, fill=(255, 255, 255))
-    d.text((44, 102), s["ip"][:18], font=FM8, fill=(255, 255, 255))
-    device.display(img)
+    d.text((0, 4),   "Pi STATS",            font=FM8, fill=(255, 255, 255))
+    d.text((75, 4),  f"T:{s['temp']:.0f}C", font=FM8, fill=(255, 255, 255))
+    d.line([(0, 16), (127, 16)],            fill=(255, 255, 255))
+    d.text((0, 26),  f"CPU {s['cpu']:4.0f}%",      font=FM8, fill=(255, 255, 255))
+    hbar(d, 58, 19, 68, 8, s["cpu"])
+    d.text((0, 46),  f"RAM {s['ram_pct']:4.0f}%",  font=FM8, fill=(255, 255, 255))
+    hbar(d, 58, 39, 68, 8, s["ram_pct"])
+    d.text((0, 66),  f"DSK {s['disk_pct']:4.0f}%", font=FM8, fill=(255, 255, 255))
+    hbar(d, 58, 59, 68, 8, s["disk_pct"])
+    d.line([(0, 96), (127, 96)],            fill=(255, 255, 255))
+    d.text((0, 102), f"{s['volt']:.2f}V",   font=FM8, fill=(255, 255, 255))
+    d.text((44, 102), s["ip"][:18],          font=FM8, fill=(255, 255, 255))
+    send(device, img)
 
 
-# ── Render: telemetry fields ──────────────────────────────────────────────────
+# ── Render: telemetry ─────────────────────────────────────────────────────────
 def render_telemetry(device, data: dict, fields: list) -> None:
     img, d = new_img()
-    fields = (fields or [])[:4]
+    tel  = data.get("telemetry", {})
+    fields = fields[:4]
+
     if not fields:
         d.text((4, 40), "No fields selected.", font=F9, fill=(255, 255, 255))
-        d.text((4, 60), "Use /display page.", font=FM8, fill=(255, 255, 255))
-        device.display(img)
+        d.text((4, 60), "Use /display page.",  font=FM8, fill=(255, 255, 255))
+        send(device, img)
         return
 
     row_h = HEIGHT // len(fields)
-    font_val = [F20, F20, F16, F12][len(fields) - 1]
+    font_val = [F20, F16, F12, F10][len(fields) - 1]
 
     for i, key in enumerate(fields):
-        y0 = i * row_h
+        y0    = i * row_h
         label = key.replace("_", " ").upper()
-        raw = data.get(key, "—")
+        raw   = tel.get(key, "—")
+
         if isinstance(raw, float):
             val_str = f"{raw:.2f}"
         else:
             val_str = str(raw)
 
-        d.text((0, y0 + 2), label, font=FM8, fill=(255, 255, 255))
+        d.text((0, y0 + 2),  label,   font=FM8,     fill=(255, 255, 255))
         d.text((0, y0 + 14), val_str, font=font_val, fill=(255, 255, 255))
         if i < len(fields) - 1:
             d.line([(0, y0 + row_h - 1), (127, y0 + row_h - 1)], fill=(100, 100, 100))
 
-    device.display(img)
+    send(device, img)
 
 
 # ── Render: custom text ───────────────────────────────────────────────────────
 def render_custom_text(device, text: str) -> None:
     img, d = new_img()
-    if not text.strip():
+    if not text:
         d.text((20, 50), "No text set.", font=F9, fill=(255, 255, 255))
-        device.display(img)
+        send(device, img)
         return
 
-    lines = text.strip().split("\n")[:8]
-    total = len(lines)
-    font = (F20 if total == 1 and len(lines[0]) <= 10
-            else F16 if total <= 2
-            else F12 if total <= 4
-            else F9)
-    lh = font.size if hasattr(font, "size") else 14
-    y0 = max(0, (HEIGHT - lh * total) // 2)
+    lines = text.strip().split("\n")[:6]
+    n = len(lines)
+    fsize = 14 if (n == 1 and len(lines[0]) <= 10) else (12 if n <= 2 else (8 if n <= 4 else 7))
+    font  = _font(fsize, mono=False)
+    lh    = int(fsize * 1.3)
+    y0    = max(0, (HEIGHT - lh * n) // 2)
 
     for i, line in enumerate(lines):
-        tw = text_w(d, line, font)
+        try:
+            tw = d.textlength(line, font=font)
+        except Exception:
+            tw = len(line) * fsize * 0.6
         x = max(0, (WIDTH - tw) // 2)
         d.text((x, y0 + i * lh), line[:22], font=font, fill=(255, 255, 255))
 
-    device.display(img)
+    send(device, img)
 
 
 # ── Render: pixel art ─────────────────────────────────────────────────────────
 def render_pixel_art(device, b64_png: str) -> None:
-    import base64, io
+    if not b64_png:
+        img, d = new_img()
+        d.text((20, 50), "No image set.", font=F9, fill=(255, 255, 255))
+        send(device, img)
+        return
     try:
         raw = base64.b64decode(b64_png)
-        src = Image.open(io.BytesIO(raw)).convert("RGB").resize((WIDTH, HEIGHT))
-        device.display(src)
+        src = Image.open(BytesIO(raw)).convert("RGB").resize((WIDTH, HEIGHT))
+        send(device, src)
     except Exception as e:
         img, d = new_img()
         d.text((4, 40), "Image error:", font=FM8, fill=(255, 255, 255))
-        d.text((4, 52), str(e)[:20], font=FM8, fill=(255, 255, 255))
-        device.display(img)
+        d.text((4, 52), str(e)[:20],   font=FM8, fill=(255, 255, 255))
+        send(device, img)
 
 
 # ── Startup sequence ──────────────────────────────────────────────────────────
@@ -364,9 +372,8 @@ def run_startup(device) -> None:
     render_checks(device, results)
     time.sleep(0.3)
 
-    # Fan: pass if CPU temp < 85 °C
     try:
-        t = int(Path("/sys/class/thermal/thermal_zone0/temp").read_text()) / 1000
+        t      = int(Path("/sys/class/thermal/thermal_zone0/temp").read_text()) / 1000
         fan_ok = t < 85.0
     except Exception:
         fan_ok = True
@@ -377,12 +384,9 @@ def run_startup(device) -> None:
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
 def main() -> None:
-    log.info("Starting LCD daemon")
+    log.info("Starting LCD daemon (st7735 driver)")
 
-    st = read_state()
     device = None
-
-    # Keep retrying until display is found
     while device is None:
         device = init_display()
         if device is None:

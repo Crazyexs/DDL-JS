@@ -2,12 +2,12 @@ import uvicorn
 import socket
 import random
 import math
+import sys
 
 
 
 import os
 import re
-import sys
 import json
 import csv
 import asyncio
@@ -222,10 +222,19 @@ state = GSState()
 
 # ===================== STARTUP SERIAL PORT SELECTION =====================
 def _select_serial_port_at_startup():
-    """Interactive port picker shown once at import time when stdin is a real terminal."""
-    if not sys.stdin.isatty():
-        return
+    """Interactive port picker shown once at import time when stdin is a real terminal.
+    When running headless (systemd/no TTY), auto-detects the first USB serial port.
+    """
     ports = sorted(serial.tools.list_ports.comports(), key=lambda p: p.device)
+
+    if not sys.stdin.isatty():
+        # Running headless (e.g. systemd on Raspberry Pi) — auto-detect XBee port.
+        usb_ports = [p for p in ports if "USB" in p.hwid.upper() or "ttyUSB" in p.device or "ttyACM" in p.device]
+        if usb_ports:
+            state.cfg.port = usb_ports[0].device
+            log_json(event="auto_port_selected", port=state.cfg.port, reason="headless_mode")
+        return
+
     print("\n" + "=" * 54)
     print("  DAEDALUS — SELECT SERIAL PORT")
     print("=" * 54)
@@ -234,7 +243,7 @@ def _select_serial_port_at_startup():
         print("=" * 54 + "\n")
         return
     for i, p in enumerate(ports, 1):
-        marker = "  ← current" if p.device == state.cfg.port else ""
+        marker = "  <- current" if p.device == state.cfg.port else ""
         print(f"  [{i}]  {p.device:<22} {p.description}{marker}")
     print(f"\n  [Enter]  Keep default ({state.cfg.port})")
     print("=" * 54)
@@ -797,14 +806,7 @@ async def handle_telemetry_line(raw: str):
     It uses 'TELEMETRY_CONFIG' to know which column is which.
     """
 
-    # ── STEP 0: Save raw line unconditionally ────────────────────────────────
-    # This runs before ANY parsing or validation so nothing can prevent it.
-    # Every byte the payload sends lands in the CSV exactly as received.
-    if state.csv_ready:
-        async with aiofiles.open(get_active_csv(), "a", encoding="utf-8", newline="") as f:
-            await f.write(raw + "\r\n")
-
-    # ── STEP 1: Parse fields for UI display only ─────────────────────────────
+    # ── STEP 0: Parse fields ──────────────────────────────────────────────────
     reader = csv.reader([raw], skipinitialspace=True)
     try:
         parts = next(reader)
@@ -813,12 +815,18 @@ async def handle_telemetry_line(raw: str):
 
     parts = [p.strip() for p in parts]
 
-    # If the line has fewer fields than the config expects, log it and skip
-    # UI broadcast — the raw data is already saved above.
+    # Validate minimum required fields BEFORE saving to CSV.
+    # This prevents partial/corrupt packets from corrupting the log file.
     min_required = len([x for x in TELEMETRY_CONFIG if not x.get("optional", False)])
     if len(parts) < min_required:
         ring.append(json.dumps({"bad_line": raw}))
         return
+
+    # ── STEP 1: Save validated raw line to CSV ────────────────────────────────
+    # Only runs after we confirm the packet has the correct number of fields.
+    if state.csv_ready:
+        async with aiofiles.open(get_active_csv(), "a", encoding="utf-8", newline="") as f:
+            await f.write(raw + "\r\n")
 
     parsed_data = {}
     for i, cfg in enumerate(TELEMETRY_CONFIG):
@@ -840,8 +848,10 @@ async def handle_telemetry_line(raw: str):
             parsed_data[key] = value
 
     # ── STEP 2: Build Telemetry object for WebSocket broadcast ───────────────
+    # Increment rx_count FIRST so gs_rx_count is correct (was off-by-one).
+    state.rx_count += 1
     parsed_data["gs_ts_utc"]    = now_utc_iso()
-    parsed_data["gs_rx_count"]  = state.rx_count + 1
+    parsed_data["gs_rx_count"]  = state.rx_count
     parsed_data["gs_loss_total"] = state.loss_count
     parsed_data["gs_raw_line"]  = raw
 
@@ -872,9 +882,8 @@ async def handle_telemetry_line(raw: str):
             if _kml_gps_count % 10 == 0:  # write KML to disk every 10 valid GPS packets
                 await _save_kml()
 
-    # 5) Update counters
+    # 5) Update counters (rx_count already incremented in step 2)
     state.last_current_a = parsed_data.get("current_a")
-    state.rx_count += 1
     # [REQ-78] Count the number of received packets
     
     # Packet Loss Calculation (Sequence-based)
@@ -1087,6 +1096,7 @@ async def dummy_data_sender():
 
 # Global OLED subprocess reference
 oled_proc = None
+
 # ===================== FASTAPI APPLICATION SETUP =====================
 from contextlib import asynccontextmanager
 
@@ -1102,10 +1112,10 @@ async def lifespan(app: FastAPI):
     ensure_csv_header()
     
     global oled_proc
-    import sys
     try:
-        # Start the OLED screen automatically
-        oled_proc = subprocess.Popen([sys.executable, "oled/oled_daemon.py"])
+        # Start the OLED screen automatically (sys imported at top level)
+        oled_proc = subprocess.Popen([sys.executable, str(ROOT_DIR / "oled" / "oled_daemon.py")],
+                                     cwd=str(ROOT_DIR))
         log_json(event="oled_started", pid=oled_proc.pid)
     except Exception as e:
         log_json(level="error", event="oled_failed_to_start", error=str(e))
@@ -1144,7 +1154,7 @@ async def lifespan(app: FastAPI):
     if oled_proc:
         try:
             oled_proc.terminate()
-        except:
+        except Exception:
             pass
 
     # Cancel background async tasks and wait for them to finish cleanly.
@@ -1172,16 +1182,15 @@ app = FastAPI(title="CanSat Ground Station (Python)", lifespan=lifespan)
 async def api_screen_restart():
     """Kills and restarts the OLED daemon."""
     global oled_proc
-    import sys
     try:
         if oled_proc:
             oled_proc.terminate()
             oled_proc.wait(timeout=2)
-    except:
+    except Exception:
         pass
-    
     try:
-        oled_proc = subprocess.Popen([sys.executable, "oled/oled_daemon.py"])
+        oled_proc = subprocess.Popen([sys.executable, str(ROOT_DIR / "oled" / "oled_daemon.py")],
+                                     cwd=str(ROOT_DIR))
         return {"ok": True, "pid": oled_proc.pid}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -1433,6 +1442,7 @@ def _open_folder(path: Path):
         return False, str(e)
 
 @app.get("/api/csv/open-folder")
+@app.get("/api/csv/open")  # alias used by app.js
 async def api_csv_open_folder():
     """API to open the data folder."""
     if not DATA_DIR.exists():
@@ -1498,7 +1508,8 @@ async def ws_telemetry(ws: WebSocket):
         log_json(event="ws_disconnected", client=c_info)
 
 # ===================== OLED DISPLAY CONTROL =====================
-OLED_STATE_FILE = Path("/tmp/daedalus_oled.json")
+# Must match STATE_FILE in oled/oled_daemon.py
+OLED_STATE_FILE = Path("/tmp/daedalus_lcd.json")
 
 def _read_oled_state() -> dict:
     try:
@@ -1611,7 +1622,7 @@ app.mount("/", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
 if __name__ == "__main__":
     # This part runs when you execute 'python main.py'
     host = "0.0.0.0"
-    port = 8000
+    port = 8080  # matches uvicorn command in README and systemd service
 
     try:
         # Try to find the actual IP address of this computer
