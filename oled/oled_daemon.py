@@ -241,7 +241,7 @@ def render_checks(device, results: list) -> None:
         else:
             badge = "[ FAIL ]"
             color = (255, 0, 0) # red for fail
-        d.text((78, y), badge, font=FM8, fill=color)
+        d.text((78, y), badge, font=FM8, fill=(255, 255, 255))
     device.display(img)
 
 
@@ -249,7 +249,7 @@ def render_checks(device, results: list) -> None:
 def render_pi_stats(device, s: dict) -> None:
     img, d = new_img()
     # Header
-    d.text((0, 4), "Pi STATS", font=FM8, fill=(0, 255, 255))
+    d.text((0, 4), "Pi STATS", font=FM8, fill=(255, 255, 255))
     d.text((75, 4), f"T:{s['temp']:.0f}°C", font=FM8, fill=(255, 255, 255))
     d.line([(0, 16), (127, 16)], fill=(255, 255, 255))
     # CPU
@@ -263,7 +263,7 @@ def render_pi_stats(device, s: dict) -> None:
     hbar(d, 62, 67, 64, 8, s["disk_pct"])
     # Footer
     d.line([(0, 96), (127, 96)], fill=(255, 255, 255))
-    d.text((0, 102), f"{s['volt']:.2f}V", font=FM8, fill=(0, 255, 0))
+    d.text((0, 102), f"{s['volt']:.2f}V", font=FM8, fill=(255, 255, 255))
     d.text((44, 102), s["ip"][:18], font=FM8, fill=(255, 255, 255))
     device.display(img)
 
@@ -290,7 +290,7 @@ def render_telemetry(device, data: dict, fields: list) -> None:
         else:
             val_str = str(raw)
 
-        d.text((0, y0 + 2), label, font=FM8, fill=(0, 255, 255))
+        d.text((0, y0 + 2), label, font=FM8, fill=(255, 255, 255))
         d.text((0, y0 + 14), val_str, font=font_val, fill=(255, 255, 255))
         if i < len(fields) - 1:
             d.line([(0, y0 + row_h - 1), (127, y0 + row_h - 1)], fill=(100, 100, 100))
@@ -332,7 +332,7 @@ def render_pixel_art(device, b64_png: str) -> None:
         device.display(src)
     except Exception as e:
         img, d = new_img()
-        d.text((4, 40), "Image error:", font=FM8, fill=(255, 0, 0))
+        d.text((4, 40), "Image error:", font=FM8, fill=(255, 255, 255))
         d.text((4, 52), str(e)[:20], font=FM8, fill=(255, 255, 255))
         device.display(img)
 

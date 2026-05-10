@@ -77,7 +77,7 @@ a:hover{text-decoration:underline;}
 
 <h1>
   OLED DISPLAY CONTROL
-  <span>128×64 SSD1306 — Daedalus GCS</span>
+  <span>128×128 ST7735 SPI (KMR-1.44) — Daedalus GCS</span>
   <a href="/" style="margin-left:auto;font-size:11px;">← Back to GCS</a>
 </h1>
 
@@ -131,9 +131,8 @@ a:hover{text-decoration:underline;}
     </div>
   </div>
 
-  <!-- Pixel Art -->
   <div id="pane-pixel_art" class="pane card">
-    <div class="card-title">Pixel Art Editor — 128×64</div>
+    <div class="card-title">Pixel Art Editor — 128×128</div>
     <div class="pixel-tools">
       <button class="tool-btn active" id="tool-draw" onclick="setTool('draw')">✏ Draw</button>
       <button class="tool-btn" id="tool-erase" onclick="setTool('erase')">✕ Erase</button>
@@ -144,7 +143,7 @@ a:hover{text-decoration:underline;}
         <input type="file" id="imgUpload" accept="image/*" style="display:none" onchange="loadImage(event)">
       </label>
     </div>
-    <canvas id="pixelCanvas" width="512" height="256"></canvas>
+    <canvas id="pixelCanvas" width="512" height="512"></canvas>
     <p class="pixel-note">Left-click / drag = draw &nbsp;|&nbsp; Right-click / drag = erase &nbsp;|&nbsp; Images auto-convert to 1-bit</p>
     <div class="btn-row">
       <button class="btn btn-primary" onclick="applyPixelArt()">Set Display → Pixel Art</button>
@@ -157,7 +156,7 @@ a:hover{text-decoration:underline;}
   <div class="card">
     <div class="card-title">OLED Preview</div>
     <div class="oled-frame">
-      <canvas id="previewCanvas" width="256" height="128"></canvas>
+      <canvas id="previewCanvas" width="256" height="256"></canvas>
     </div>
     <div class="preview-info" style="margin-top:8px;">
       Current mode: <span class="mode-badge" id="modeBadge">—</span>
@@ -165,6 +164,9 @@ a:hover{text-decoration:underline;}
     <div class="status-row">
       <div class="dot" id="oledDot"></div>
       <span id="oledStatus" style="font-size:11px;color:var(--muted);">Checking daemon…</span>
+    </div>
+    <div class="btn-row" style="margin-top: 12px;">
+      <button class="btn btn-danger" onclick="restartScreen()" style="width: 100%;">Restart Screen</button>
     </div>
   </div>
 
@@ -191,7 +193,7 @@ a:hover{text-decoration:underline;}
 // ── State ─────────────────────────────────────────────────────────────────────
 let currentMode = 'pi_stats';
 let selectedFields = [];
-let pixelData = new Uint8Array(128 * 64); // 1 = white, 0 = black
+let pixelData = new Uint8Array(128 * 128); // 1 = white, 0 = black
 let drawTool = 'draw';
 let isDrawing = false;
 
@@ -297,13 +299,13 @@ function getPixelCanvas() { return document.getElementById('pixelCanvas'); }
 function initPixelCanvas() {
   const c = getPixelCanvas();
   c.width  = 128 * PIXEL_SCALE;
-  c.height = 64  * PIXEL_SCALE;
+  c.height = 128 * PIXEL_SCALE;
   redrawPixels();
 
   const getPos = (e) => {
     const r = c.getBoundingClientRect();
     const scaleX = 128 / r.width;
-    const scaleY = 64  / r.height;
+    const scaleY = 128 / r.height;
     const cx = e.touches ? e.touches[0].clientX : e.clientX;
     const cy = e.touches ? e.touches[0].clientY : e.clientY;
     return [
@@ -315,7 +317,7 @@ function initPixelCanvas() {
   const paint = (e) => {
     e.preventDefault();
     const [px, py] = getPos(e);
-    if (px < 0 || px >= 128 || py < 0 || py >= 64) return;
+    if (px < 0 || px >= 128 || py < 0 || py >= 128) return;
     const tool = e.buttons === 2 ? 'erase' : drawTool;
     pixelData[py * 128 + px] = tool === 'erase' ? 0 : 1;
     redrawPixels();
@@ -337,7 +339,7 @@ function redrawPixels() {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, c.width, c.height);
   ctx.fillStyle = '#fff';
-  for (let y = 0; y < 64; y++) {
+  for (let y = 0; y < 128; y++) {
     for (let x = 0; x < 128; x++) {
       if (pixelData[y * 128 + x]) {
         ctx.fillRect(x * PIXEL_SCALE, y * PIXEL_SCALE, PIXEL_SCALE - 1, PIXEL_SCALE - 1);
@@ -369,13 +371,13 @@ function loadImage(e) {
   reader.onload = ev => {
     const img = new Image();
     img.onload = () => {
-      // Draw to a 128x64 offscreen canvas, then read pixels
+      // Draw to a 128x128 offscreen canvas, then read pixels
       const off = document.createElement('canvas');
-      off.width = 128; off.height = 64;
+      off.width = 128; off.height = 128;
       const ctx = off.getContext('2d');
-      ctx.drawImage(img, 0, 0, 128, 64);
-      const id = ctx.getImageData(0, 0, 128, 64);
-      for (let i = 0; i < 128 * 64; i++) {
+      ctx.drawImage(img, 0, 0, 128, 128);
+      const id = ctx.getImageData(0, 0, 128, 128);
+      for (let i = 0; i < 128 * 128; i++) {
         // Convert to grayscale → 1-bit (threshold 128)
         const r = id.data[i * 4];
         const g = id.data[i * 4 + 1];
@@ -392,10 +394,10 @@ function loadImage(e) {
 
 function pixelsToB64Png() {
   const off = document.createElement('canvas');
-  off.width = 128; off.height = 64;
+  off.width = 128; off.height = 128;
   const ctx = off.getContext('2d');
-  const id = ctx.createImageData(128, 64);
-  for (let i = 0; i < 128 * 64; i++) {
+  const id = ctx.createImageData(128, 128);
+  for (let i = 0; i < 128 * 128; i++) {
     const v = pixelData[i] ? 255 : 0;
     id.data[i*4]=v; id.data[i*4+1]=v; id.data[i*4+2]=v; id.data[i*4+3]=255;
   }
@@ -409,7 +411,7 @@ const PREVIEW_SCALE = 2;
 function refreshPreview() {
   const c = document.getElementById('previewCanvas');
   c.width  = 128 * PREVIEW_SCALE;
-  c.height = 64  * PREVIEW_SCALE;
+  c.height = 128 * PREVIEW_SCALE;
   const ctx = c.getContext('2d');
   ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = '#000';
@@ -487,7 +489,7 @@ function drawPreviewCustomText(ctx) {
 }
 
 function drawPreviewPixelArt(ctx) {
-  for (let y = 0; y < 64; y++) {
+  for (let y = 0; y < 128; y++) {
     for (let x = 0; x < 128; x++) {
       if (pixelData[y * 128 + x]) {
         ctx.fillRect(x * PREVIEW_SCALE, y * PREVIEW_SCALE, PREVIEW_SCALE, PREVIEW_SCALE);
@@ -544,6 +546,25 @@ async function saveIfaceConfig() {
   const addr  = document.getElementById('addrSelect').value;
   await post('/api/display/config', {interface: iface, i2c_address: addr});
   alert('Interface saved. Restart the OLED daemon for changes to take effect.');
+}
+
+async function restartScreen() {
+  const btn = document.querySelector('.btn-danger');
+  const origText = btn.textContent;
+  btn.textContent = 'Restarting...';
+  try {
+    const r = await fetch('/api/screen/restart');
+    const d = await r.json();
+    if (d.ok) {
+      alert(`Screen restarted successfully! (PID: ${d.pid})`);
+    } else {
+      alert(`Failed to restart screen: ${d.error}`);
+    }
+  } catch(e) {
+    alert(`Error: ${e.message}`);
+  } finally {
+    btn.textContent = origText;
+  }
 }
 
 // ── Pi stats live poll ────────────────────────────────────────────────────────

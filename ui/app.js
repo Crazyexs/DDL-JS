@@ -1216,12 +1216,10 @@ if (!window.__DGS_BOOTED__) {
     // ---------- ACTION BUTTONS ----------
     el.btnOpenCsvFolder?.addEventListener('click', async () => {
       try {
-        const res = await fetch('/api/csv/open-folder');
-        if (!res.ok) throw new Error(await res.text());
-        info("Request to open CSV log folder sent.");
-      } catch (e) {
-        err(`Could not open folder: ${e.message}`);
-      }
+        const r = await fetch('/api/csv/open');
+        if (r.ok) info('Opened CSV folder');
+        else warn('Failed to open CSV folder');
+      } catch (e) { err(`Open folder error: ${e.message}`); }
     });
 
     el.btnSim?.addEventListener('click', async () => {

@@ -1085,7 +1085,8 @@ async def dummy_data_sender():
         await handle_telemetry_line(line)
         await asyncio.sleep(1)
 
-
+# Global OLED subprocess reference
+oled_proc = None
 # ===================== FASTAPI APPLICATION SETUP =====================
 from contextlib import asynccontextmanager
 
@@ -1099,6 +1100,15 @@ async def lifespan(app: FastAPI):
     # Startup logic
     log_json(event="startup", team=TEAM_ID, server_serial=USE_SERVER_SERIAL)
     ensure_csv_header()
+    
+    global oled_proc
+    import sys
+    try:
+        # Start the OLED screen automatically
+        oled_proc = subprocess.Popen([sys.executable, "oled/oled_daemon.py"])
+        log_json(event="oled_started", pid=oled_proc.pid)
+    except Exception as e:
+        log_json(level="error", event="oled_failed_to_start", error=str(e))
     
     tasks = []
     serial_thread = None
@@ -1131,6 +1141,12 @@ async def lifespan(app: FastAPI):
     # Shutdown logic
     log_json(event="shutdown")
 
+    if oled_proc:
+        try:
+            oled_proc.terminate()
+        except:
+            pass
+
     # Cancel background async tasks and wait for them to finish cleanly.
     all_tasks = list(tasks)
     if dummy_task and not dummy_task.done():
@@ -1152,6 +1168,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="CanSat Ground Station (Python)", lifespan=lifespan)
 
+@app.get("/api/screen/restart")
+async def api_screen_restart():
+    """Kills and restarts the OLED daemon."""
+    global oled_proc
+    import sys
+    try:
+        if oled_proc:
+            oled_proc.terminate()
+            oled_proc.wait(timeout=2)
+    except:
+        pass
+    
+    try:
+        oled_proc = subprocess.Popen([sys.executable, "oled/oled_daemon.py"])
+        return {"ok": True, "pid": oled_proc.pid}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 @app.post("/api/dummy/start")
 async def api_dummy_start():
