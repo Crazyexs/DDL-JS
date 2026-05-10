@@ -51,64 +51,92 @@ If no radio is connected, click **Run Sim** in the UI to generate dummy telemetr
 
 ---
 
-## Raspberry Pi Setup
+## 🍓 Raspberry Pi Setup (Deep Guide)
 
-One command installs everything and configures auto-start:
+This section provides a step-by-step walkthrough to turn a Raspberry Pi into a dedicated, autonomous Ground Control Station.
 
+### Step 1: Hardware Preparation
+1. **Radio:** Plug in your XBee USB adapter.
+2. **GPS:** Plug in your Ground Station USB GPS (e.g. VK-172 u-blox 7).
+3. **Display (Optional):** If using the KMR-1.44 SPI V2 display, connect the pins to your Pi's GPIO header. You **must** enable SPI communication on the Pi:
+   ```bash
+   sudo raspi-config
+   ```
+   Navigate to **Interface Options -> SPI** and select **Yes** to enable it.
+
+### Step 2: Download the Ground Station
+Open a terminal on the Raspberry Pi and clone this repository, making sure to switch to the `raspberry-pi` branch:
 ```bash
 git clone https://github.com/Crazyexs/DDL-JS.git
 cd DDL-JS
 git checkout raspberry-pi
+```
+
+### Step 3: Run the Setup Script
+The provided script will automatically install all required packages (like Chromium), create a Python virtual environment, install dependencies, and configure the Pi to boot directly into the dashboard.
+```bash
 sudo bash scripts/setup-pi.sh
+```
+
+### Step 4: Reboot
+Once the script finishes, you **must reboot** the Raspberry Pi to apply the user group changes (giving you permission to read the USB radio) and to start the auto-boot services.
+```bash
 sudo reboot
 ```
 
-After reboot the backend starts automatically (systemd) and the browser opens
-in kiosk mode when the desktop loads.
+After rebooting:
+- The backend server will automatically start silently in the background (via systemd).
+- The Raspberry Pi desktop will load, and a Chromium browser will automatically open in fullscreen (kiosk) mode, displaying the dashboard.
 
-### What the setup script does
+---
 
-| Step | What happens |
-|---|---|
-| System packages | Installs `chromium-browser`, `python3-venv`, `unclutter`, `curl` |
-| Python venv | Creates `venv/` and installs `requirements.txt` |
-| systemd service | `daedalus-gcs.service` — starts backend at boot, restarts on crash |
-| Kiosk autostart | XDG + LXDE autostart entries launch Chromium in kiosk mode after login |
-| Serial access | Adds user to `dialout` group for XBee radio access |
-| `gcs` tool | Installs `/usr/local/bin/gcs` for easy management |
+### 🌐 Accessing the Dashboard Remotely (via Ngrok)
 
-### Managing the service
+If you need to view the Ground Station from a different network (e.g. sharing the live dashboard with judges or team members far away), you can use `ngrok` to create a secure public URL.
 
+#### 1. Install Ngrok
+Open a new terminal on the Pi and install ngrok via apt:
 ```bash
-gcs start      # start the backend
-gcs stop       # stop the backend
-gcs restart    # restart the backend
-gcs status     # show service status
-gcs logs       # live log stream (Ctrl+C to exit)
-gcs open       # open dashboard in browser
+curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
+  | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+echo "deb https://ngrok-agent.s3.amazonaws.com buster main" \
+  | sudo tee /etc/apt/sources.list.d/ngrok.list
+sudo apt update
+sudo apt install ngrok
 ```
 
-Or with systemctl directly:
-
+#### 2. Authenticate
+Sign up for a free account at [ngrok.com](https://ngrok.com/) and find your Authtoken on the dashboard. Add it to your Pi:
 ```bash
-sudo systemctl start  daedalus-gcs
-sudo systemctl stop   daedalus-gcs
-sudo systemctl status daedalus-gcs
-journalctl -u daedalus-gcs -f
+ngrok config add-authtoken YOUR_AUTHTOKEN_HERE
 ```
 
-### Accessing the dashboard
+#### 3. Expose the Server
+Because the Daedalus server runs on port `8080`, simply run:
+```bash
+ngrok http 8080
+```
+Ngrok will display a screen with a "Forwarding" URL (e.g., `https://a1b2c3d4.ngrok-free.app`). Send this link to anyone, and they will be able to view the live dashboard directly from their phones or laptops!
 
-| From | URL |
-|---|---|
-| On the Pi | `http://127.0.0.1:8080` |
-| Another device on same network | `http://<pi-ip>:8080` |
-| Remote (via ngrok) | Run `ngrok http 8080` in a terminal |
+*(Note: Ngrok will stop if you close the terminal. Keep it running during the mission if remote viewing is needed).*
+
+---
+
+### ⚙️ Managing the Background Service
+
+The setup script creates a shortcut tool called `gcs` to easily control the background server:
+
+```bash
+gcs start      # Start the backend manually
+gcs stop       # Stop the backend
+gcs restart    # Restart the backend (useful after a git pull)
+gcs status     # Check if the backend is running
+gcs logs       # View the live system logs for the backend
+gcs open       # Open the dashboard in a browser window manually
+```
 
 ### Re-running setup
-
-The setup script is idempotent — safe to run again after a `git pull`:
-
+The setup script is safe to run multiple times. If you download new code changes, apply them easily:
 ```bash
 git pull
 sudo bash scripts/setup-pi.sh
@@ -128,6 +156,7 @@ DDL-JS/
 ├── scripts/
 │   ├── setup-pi.sh          # Raspberry Pi one-command installer
 │   └── start-kiosk.sh       # Kiosk browser launcher (called by autostart)
+├── oled/                    # Drivers for KMR-1.44 SPI display
 └── ui/
     ├── index.html           # Main dashboard
     ├── cmd.html             # Standalone command panel (/cmd)
