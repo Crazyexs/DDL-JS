@@ -204,37 +204,35 @@ sudo raspi-config
 
 Go to: **3 Interface Options** → **I4 SPI** → **Yes** → Finish → Reboot.
 
-### Pi Installation Steps
+### Pi Installation — One Command
+
+After cloning the repository, run the setup script once. It handles everything automatically:
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/Crazyexs/DDL-JS.git
-cd DDL-JS
-
-# 2. Create and activate a virtual environment
-python3 -m venv venv
-source venv/bin/activate
-
-# 3. Install all dependencies (includes st7735 screen driver)
-pip install -r requirements.txt
+chmod +x scripts/setup-pi.sh
+bash scripts/setup-pi.sh
 ```
 
-### Auto-Start on Boot (systemd)
-
-The file `scripts/daedalus.service` configures the GCS to start automatically every time the Raspberry Pi boots, with no manual steps required.
-
-**Install the service once:**
+Then reboot:
 
 ```bash
-sudo cp scripts/daedalus.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now daedalus
+sudo reboot
 ```
 
-The GCS will now start automatically on every boot. The server also automatically:
-- Detects and connects to your XBee radio (first available `/dev/ttyUSB*` port)
-- Launches the ST7735 status screen daemon
-- Starts saving all telemetry to CSV
+After the reboot:
+- The GCS server starts automatically in the background.
+- Firefox opens `http://localhost:8080` automatically on desktop login.
+- Your XBee radio is detected and connected automatically.
+- The ST7735 screen starts displaying Pi stats automatically.
+
+### What the Setup Script Does
+
+The `scripts/setup-pi.sh` script performs four steps automatically:
+
+1. Installs all Python dependencies into the virtual environment.
+2. Enables the SPI interface in `/boot/firmware/config.txt` for the ST7735 screen.
+3. Installs and enables `scripts/daedalus.service` as a systemd service so the GCS server starts on every boot.
+4. Creates `~/.config/autostart/daedalus-browser.desktop` so Firefox opens the dashboard automatically on desktop login (with a 5-second delay to let the server start first).
 
 ### Managing the Service
 
