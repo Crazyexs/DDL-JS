@@ -1,148 +1,141 @@
-# Daedalus Ground Station — Team #1043
+# Daedalus Ground Station (Team #1043)
 
-Real-time telemetry dashboard for CanSat Team #1043. FastAPI backend + browser-based frontend.
+![Daedalus Logo](ui/assets/daedalus.png)
 
----
+![Project Status](https://img.shields.io/badge/status-active-success)
+![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
 
-## Deep Installation Guide
+**Daedalus Ground Station** is a comprehensive mission control interface designed for **CanSat Team #1043**. It provides real-time telemetry visualization, command uplink capabilities, and GPS tracking to monitor the payload during flight operations.
 
-Follow these step-by-step instructions to download, install, and run the Ground Control Station (GCS) on your computer.
-
-### Prerequisites
-
-Before you begin, you must have **Python 3.9** (or newer) installed on your computer. 
-- **Windows**: Download Python from [python.org/downloads](https://www.python.org/downloads/). *Crucial Step:* During installation, make sure you check the box that says **"Add Python to PATH"** before clicking Install.
-- **macOS**: Install via Homebrew (`brew install python`) or download from python.org.
-- **Linux**: Usually pre-installed, or install via `sudo apt install python3 python3-venv`.
-
-You also need **Git** installed to download the code. Download from [git-scm.com](https://git-scm.com/downloads).
+The system is built with a robust **Python FastAPI** backend for hardware communication and data logging, paired with a responsive **web-based frontend** for data visualization.
 
 ---
 
-### Step-by-Step: Windows
+## Features
 
-**1. Open Command Prompt**
-Press `Win + R`, type `cmd`, and press Enter.
-
-**2. Download the Code**
-Run the following command to clone the repository to your computer:
-```bat
-git clone https://github.com/Crazyexs/DDL-JS.git
-```
-
-**3. Enter the Project Folder**
-```bat
-cd DDL-JS
-```
-
-**4. Create a Virtual Environment**
-This creates an isolated environment so the project's dependencies don't mess with your system Python:
-```bat
-python -m venv venv
-```
-
-**5. Activate the Virtual Environment**
-You must run this command *every time* you open a new terminal to run the GCS:
-```bat
-venv\Scripts\activate
-```
-*(You will know it worked if you see `(venv)` at the start of your command prompt).*
-
-**6. Install the Dependencies**
-Download all the required libraries (like FastAPI and PySerial) automatically:
-```bat
-pip install -r requirements.txt
-```
-
-**7. Start the Server**
-Run the FastAPI backend server using the virtual environment's Python:
-```bat
-venv\Scripts\python -m uvicorn main:app --host 0.0.0.0 --port 8080
-```
-The server is now running! Leave this Command Prompt window open.
+*   **Real-time Telemetry Dashboard:** Live monitoring of Altitude, Temperature, Pressure, Voltage, Current, and IMU data (Gyro/Accel).
+*   **GPS Tracking:** Interactive map integration using Leaflet.js to track the payload's location.
+*   **Command Uplink:** Send commands (e.g., `CX,ON`, `SIM,ENABLE`) directly to the CanSat via serial connection.
+*   **Data Logging:**
+    *   **Flight Data:** Automatically saves telemetry to CSV format (`data/Flight_1043.csv`).
+    *   **System Logs:** Records operational events to JSONL (`logs/ground.jsonl`).
+*   **Dynamic Configuration:** Flexible telemetry parsing defined in `telemetry_config.json`.
+*   **Simulation Mode:** Built-in tools to replay flight data or generate dummy telemetry for testing and practice.
 
 ---
 
-### Step-by-Step: macOS & Linux
+## Tech Stack
 
-**1. Open Terminal**
-Open your Terminal application.
+### Backend
+*   **Language:** Python 3.8+
+*   **Framework:** [FastAPI](https://fastapi.tiangolo.com/) (with Uvicorn)
+*   **Communication:** `pyserial`, `websockets`
 
-**2. Download the Code**
-Run the following command to clone the repository:
-```bash
-git clone https://github.com/Crazyexs/DDL-JS.git
-```
-
-**3. Enter the Project Folder**
-```bash
-cd DDL-JS
-```
-
-**4. Create a Virtual Environment**
-```bash
-python3 -m venv venv
-```
-
-**5. Activate the Virtual Environment**
-You must run this command *every time* you open a new terminal to run the GCS:
-```bash
-source venv/bin/activate
-```
-*(You will know it worked if you see `(venv)` at the start of your command prompt).*
-
-**6. Install the Dependencies**
-```bash
-pip install -r requirements.txt
-```
-
-**7. Start the Server**
-Run the FastAPI backend server using the virtual environment's Python:
-```bash
-./venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8080
-```
-The server is now running! Leave this Terminal window open.
+### Frontend
+*   **Core:** HTML5, CSS3, Vanilla JavaScript
+*   **Visualization:**
+    *   [ECharts](https://echarts.apache.org/) (Real-time charts)
+    *   [Leaflet](https://leafletjs.com/) (Maps)
 
 ---
 
-## Opening the Dashboard
+## Installation
 
-Once the server is running (Step 7 above), open your preferred web browser (Google Chrome or Microsoft Edge recommended) and go to:
+To avoid common "command not found" errors, we run the commands using direct paths to the virtual environment (`venv`).
 
-**[http://localhost:8080](http://localhost:8080)**
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/Crazyexs/DDL-JS.git
+    cd DDL-JS
+    ```
+
+2.  **Set up a Virtual Environment:**
+    ```bash
+    # Windows
+    python -m venv venv
+
+    # macOS/Linux
+    python3 -m venv venv
+    ```
+
+3.  **Install Dependencies:**
+    We recommend using the absolute path to the virtual environment's pip:
+    ```bash
+    # Windows
+    .\venv\Scripts\pip install -r requirements.txt
+
+    # macOS/Linux
+    ./venv/bin/pip install -r requirements.txt
+    ```
 
 ---
 
-## Hardware & Serial Port Setup
+## Usage
 
-You no longer need to edit the code to connect to your XBee radio! 
+1.  **Connect the Radio Transceiver:**
+    Plug your LoRa/XBee radio into the USB port.
 
-1. Plug your XBee USB radio adapter into your computer.
-2. Open the dashboard in your browser (`http://localhost:8080`).
-3. Look at the **Configuration Panel** on the left side of the screen.
-4. Select the correct **COM Port** (Windows) or `/dev/` port (Mac/Linux) from the dropdown list.
-5. Ensure the **Baud Rate** is set to `115200` (or whatever matches your XBee configuration).
-6. Click **Connect**.
+2.  **Start the Server:**
+    Run the server using the absolute path to the virtual environment's uvicorn to prevent errors.
+    ```bash
+    # Windows
+    .\venv\Scripts\uvicorn main:app --host 0.0.0.0 --port 8080
+    
+    # macOS/Linux
+    ./venv/bin/uvicorn main:app --host 0.0.0.0 --port 8080
+    ```
 
-If you do not have a radio plugged in but still want to test the dashboard, you can click **Run Sim** or use the `/dummy.on` command in the quick commands list to generate fake telemetry.
+3.  **Access the Dashboard:**
+    Open your web browser (Firefox recommended) and navigate to:
+    > **http://localhost:8080**
+
+4.  **Hardware & Serial Port Setup:**
+    1. Look at the **Configuration Panel** on the left side of the screen.
+    2. Select the correct **COM Port** (Windows) or `/dev/` port (Mac/Linux) from the dropdown list.
+    3. Ensure the **Baud Rate** is set to `115200` (or whatever matches your XBee configuration).
+    4. Click **Connect**.
+
+5.  **Remote Access (Optional) with ngrok:**
+    To make your Ground Station accessible over the internet, you can use [ngrok](https://ngrok.com/).
+
+    *   **Run ngrok:** In a **new terminal window**, run:
+        ```bash
+        ngrok http 8080
+        ```
+    *   ngrok will provide a public URL (e.g., `https://xxxx-xxxx-xxxx-xxxx.ngrok-free.app`) that you can use to access your dashboard remotely.
+
+6.  **Simulation (Optional):**
+    If you don't have hardware connected, click the **Run Sim** button in the UI or use the `/dummy.on` command in the quick commands list to generate fake telemetry.
 
 ---
 
 ## Project Structure
 
-```
+```text
 DDL-JS/
-├── main.py                  # Backend server (FastAPI + serial)
-├── requirements.txt         # Python dependencies
-├── telemetry_config.json    # Telemetry field definitions (CSV column order)
-├── cansat_2023_simp.txt     # Simulation pressure data
-└── ui/
-    ├── index.html           # Main dashboard
-    ├── cmd.html             # Standalone command panel (/cmd)
-    ├── app.js               # Dashboard logic
-    ├── styles.css           # Styles
-    └── sw.js                # Service worker (offline tile cache)
+├── main.py                 # Core backend logic (Server, Serial, Logging)
+├── requirements.txt        # Python dependencies
+├── telemetry_config.json   # Telemetry parsing configuration
+├── data/                   # Stores flight CSV data
+├── logs/                   # Stores system operation logs
+└── ui/                     # Web frontend source code
+    ├── index.html          # Main dashboard layout
+    ├── app.js              # Frontend logic
+    ├── styles.css          # Styling
+    └── assets/             # Images and icons
 ```
+
+## API Endpoints
+
+The backend exposes several endpoints for control and integration:
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/command` | Queue a command for uplink to the CanSat. |
+| `GET` | `/api/logs` | Retrieve the latest system logs. |
+| `POST` | `/api/sim/start` | Start the pressure data simulation. |
+| `POST` | `/api/dummy/start` | Enable internal dummy data generation. |
+| `GET` | `/api/health` | Check system status (Serial connection, RX count). |
 
 ---
 
@@ -194,16 +187,6 @@ Connect the screen to the Raspberry Pi GPIO header as follows:
 
 If you connect LED directly to 3.3V instead of GPIO 18, open `oled/oled_daemon.py` and change `BACKLIGHT = 18` to `BACKLIGHT = None`.
 
-### Enable SPI on the Pi
-
-SPI must be enabled before the screen will work. Run this once:
-
-```bash
-sudo raspi-config
-```
-
-Go to: **3 Interface Options** → **I4 SPI** → **Yes** → Finish → Reboot.
-
 ### Pi Installation — One Command
 
 After cloning the repository, run the setup script once. It handles everything automatically:
@@ -224,15 +207,6 @@ After the reboot:
 - Firefox opens `http://localhost:8080` automatically on desktop login.
 - Your XBee radio is detected and connected automatically.
 - The ST7735 screen starts displaying Pi stats automatically.
-
-### What the Setup Script Does
-
-The `scripts/setup-pi.sh` script performs four steps automatically:
-
-1. Installs all Python dependencies into the virtual environment.
-2. Enables the SPI interface in `/boot/firmware/config.txt` for the ST7735 screen.
-3. Installs and enables `scripts/daedalus.service` as a systemd service so the GCS server starts on every boot.
-4. Creates `~/.config/autostart/daedalus-browser.desktop` so Firefox opens the dashboard automatically on desktop login (with a 5-second delay to let the server start first).
 
 ### Managing the Service
 
@@ -256,8 +230,6 @@ Then open a browser on any device on the same Wi-Fi network and go to:
 
 **http://<Pi-IP-address>:8080**
 
-For example: `http://192.168.1.42:8080`
-
 ---
 
 ## Data Logging
@@ -269,3 +241,29 @@ The GCS saves every single byte received from the CanSat to a CSV file the momen
 
 The CSV file is created automatically when the server starts. Each row in the file is exactly the raw string received from the CanSat over the radio, in the order it was received.
 
+---
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+---
+
+## Commercial Off-The-Shelf (COTS) Software
+
+This project utilizes the following third-party software packages and libraries:
+
+### Backend (Python)
+*   **[FastAPI](https://fastapi.tiangolo.com/):** High-performance web framework for building APIs.
+*   **[Uvicorn](https://www.uvicorn.org/):** Lightning-fast ASGI server implementation.
+*   **[PySerial](https://pyserial.readthedocs.io/):** Python serial port access library for hardware communication.
+*   **[Pydantic](https://docs.pydantic.dev/):** Data validation and settings management using Python type hints.
+*   **[Aiofiles](https://github.com/Tinche/aiofiles):** File support for asyncio.
+*   **[Python-Multipart](https://github.com/Kludex/python-multipart):** Streaming multipart parser for Python.
+
+### Frontend (JavaScript)
+*   **[ECharts](https://echarts.apache.org/):** A powerful, interactive charting and visualization library.
+*   **[Leaflet.js](https://leafletjs.com/):** An open-source JavaScript library for mobile-friendly interactive maps.
+
+### External Tools
+*   **[ngrok](https://ngrok.com/):** A tool to expose a local web server to the internet (used for remote access).
