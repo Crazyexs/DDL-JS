@@ -55,9 +55,9 @@ pip install -r requirements.txt
 ```
 
 **7. Start the Server**
-Run the FastAPI backend server:
+Run the FastAPI backend server using the virtual environment's Python:
 ```bat
-python -m uvicorn main:app --host 0.0.0.0 --port 8080
+venv\Scripts\python -m uvicorn main:app --host 0.0.0.0 --port 8080
 ```
 The server is now running! Leave this Command Prompt window open.
 
@@ -97,9 +97,9 @@ pip install -r requirements.txt
 ```
 
 **7. Start the Server**
-Run the FastAPI backend server:
+Run the FastAPI backend server using the virtual environment's Python:
 ```bash
-uvicorn main:app --host 0.0.0.0 --port 8080
+./venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8080
 ```
 The server is now running! Leave this Terminal window open.
 
