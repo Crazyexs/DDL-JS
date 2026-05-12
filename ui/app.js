@@ -1168,7 +1168,7 @@ if (!window.__DGS_BOOTED__) {
             cmdEcho(`Log \u2192 ${data.file}`);
             speak(`Log switched to ${label}.`);
           } else if (data.type === 'rssi') {
-            if (el.rssiLabel) el.rssiLabel.textContent = `RSSI: ${data.dbm} dBm`;
+            if (el.rssiLabel) el.rssiLabel.textContent = `${data.dbm} dBm`;
           } else if (data.type === 'serial_status') {
             const lbl = document.getElementById('serialStatusLabel');
             if (data.connected) {
@@ -1325,7 +1325,48 @@ if (!window.__DGS_BOOTED__) {
         : `${(d / 1000).toFixed(2)} km`;
     }
 
+    function placePinMarker(lat, lon) {
+      // 3D Cesium mode
+      if (st.cesiumViewer) {
+        if (st._pinEntity) st.cesiumViewer.entities.remove(st._pinEntity);
+        st._pinEntity = st.cesiumViewer.entities.add({
+          name: 'GPS Pin',
+          position: Cesium.Cartesian3.fromDegrees(lon, lat, 0),
+          point: { pixelSize: 14, color: Cesium.Color.YELLOW, outlineColor: Cesium.Color.BLACK, outlineWidth: 2, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
+          label: { text: 'PIN', font: '11px monospace', fillColor: Cesium.Color.YELLOW, outlineColor: Cesium.Color.BLACK, outlineWidth: 2, style: Cesium.LabelStyle.FILL_AND_OUTLINE, verticalOrigin: Cesium.VerticalOrigin.BOTTOM, pixelOffset: new Cesium.Cartesian2(0, -14) },
+        });
+      }
+      // 2D Leaflet mode
+      if (st.map) {
+        if (st._pinMarker) st._pinMarker.remove();
+        st._pinMarker = L.circleMarker([lat, lon], { radius: 10, color: '#ffdd00', fillColor: '#ffdd00', fillOpacity: 0.85, weight: 2 })
+          .bindTooltip('GPS Pin', { permanent: true, direction: 'top', offset: [0, -10] })
+          .addTo(st.map);
+      }
+    }
+
     el.btnPinGps?.addEventListener('click', () => {
+      // If already pinned, offer to clear
+      if (st.pinnedLat !== null) {
+        const raw = prompt(`Current pin: ${st.pinnedLat.toFixed(5)}, ${st.pinnedLon.toFixed(5)}\n\nEnter new coordinates to update, or type CLEAR to remove pin.\nExample: 18.7880, 98.9850`);
+        if (raw === null) return;
+        if (raw.trim().toUpperCase() === 'CLEAR') {
+          st.pinnedLat = null; st.pinnedLon = null;
+          if (st._pinEntity && st.cesiumViewer) { st.cesiumViewer.entities.remove(st._pinEntity); st._pinEntity = null; }
+          if (st._pinMarker) { st._pinMarker.remove(); st._pinMarker = null; }
+          if (el.pinnedDistDisplay) el.pinnedDistDisplay.textContent = '\u2014';
+          info('GPS pin cleared.');
+          return;
+        }
+        const parts = raw.trim().split(/[\s,;]+/);
+        const lat = parseFloat(parts[0]), lon = parseFloat(parts[1]);
+        if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) { alert('Invalid coordinates. Use format: 18.7880, 98.9850'); return; }
+        st.pinnedLat = lat; st.pinnedLon = lon;
+        placePinMarker(lat, lon);
+        updatePinnedDist();
+        info(`GPS pin updated to ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+        return;
+      }
       const raw = prompt('Paste GPS coordinates (lat, lon):\nExample: 18.7880, 98.9850');
       if (!raw) return;
       const parts = raw.trim().split(/[\s,;]+/);
@@ -1337,6 +1378,7 @@ if (!window.__DGS_BOOTED__) {
       }
       st.pinnedLat = lat;
       st.pinnedLon = lon;
+      placePinMarker(lat, lon);
       updatePinnedDist();
       info(`GPS pinned at ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
     });
