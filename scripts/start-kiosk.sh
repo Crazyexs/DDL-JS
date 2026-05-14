@@ -26,13 +26,28 @@ xset s off s noblank -dpms 2>/dev/null || true
 unclutter -idle 0.5 -root &
 
 # ─── Launch browser ───────────────────────────────────────────────
-if command -v firefox-esr &>/dev/null; then
+# Prefer Chromium (default on Raspberry Pi OS) in kiosk mode
+if command -v chromium-browser &>/dev/null; then
+    BROWSER="chromium-browser"
+elif command -v chromium &>/dev/null; then
+    BROWSER="chromium"
+elif command -v firefox-esr &>/dev/null; then
     BROWSER="firefox-esr"
 elif command -v firefox &>/dev/null; then
     BROWSER="firefox"
 else
-    echo "[kiosk] ERROR: No supported browser found (firefox-esr / firefox)."
+    echo "[kiosk] ERROR: No browser found (chromium / chromium-browser / firefox)."
     exit 1
 fi
 
-exec "$BROWSER" "$GCS_URL"
+if [[ "$BROWSER" == chromium* ]]; then
+    exec "$BROWSER" \
+        --kiosk \
+        --noerrdialogs \
+        --disable-infobars \
+        --no-first-run \
+        --disable-session-crashed-bubble \
+        "$GCS_URL"
+else
+    exec "$BROWSER" "$GCS_URL"
+fi
