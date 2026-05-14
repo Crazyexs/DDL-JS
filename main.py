@@ -39,9 +39,11 @@ DEFAULT_PORT = "/dev/cu.usbserial-00000000"
 # This is the speed of the connection. Both the radio and computer must match this number.
 DEFAULT_BAUD = 115200
 
-# 64-bit address of the PAYLOAD XBee module (ATSH + ATSL, no spaces).
-# Read these from the payload module in XCTU using ATSH and ATSL commands.
-PAYLOAD_XBEE_ADDR = bytes.fromhex("0013A20041F77466")
+# Default 64-bit XBee destination address (DH + DL).
+# DH is always 0013A200 for same-model modules; DL is the unique part.
+# Changed at runtime via POST /api/xbee/config — no restart needed.
+DEFAULT_XBEE_DH = "0013A200"
+DEFAULT_XBEE_DL = "41F77466"
 
 # Setting this to True means this Python program handles the connection to the radio.
 # If False, the web browser tries to handle it directly (not recommended here).
@@ -143,6 +145,11 @@ class LogBody(BaseModel):
     """Structure for switching the active log file."""
     label: str
 
+class XBeeCfg(BaseModel):
+    """XBee destination address split into DH and DL (each 8 hex chars = 4 bytes)."""
+    dh: str = Field(default=DEFAULT_XBEE_DH, description="Destination High — 8 hex chars")
+    dl: str = Field(default=DEFAULT_XBEE_DL, description="Destination Low  — 8 hex chars")
+
 class Telemetry(BaseModel):
     """
     The structure of a single packet of data from the CanSat.
@@ -208,6 +215,9 @@ class GSState:
     kml_max_alt: float = 0.0    # Track max altitude for KML metadata
     last_current_a: Optional[float] = None  # Most recent current reading (A)
     rssi_dbm: Optional[int] = None          # Last-hop RSSI from ATDB (negative dBm)
+    xbee_dh: str = DEFAULT_XBEE_DH         # Current XBee destination high (8 hex chars)
+    xbee_dl: str = DEFAULT_XBEE_DL         # Current XBee destination low  (8 hex chars)
+    kml_landed_saved: bool = False          # True after final KML save on LANDED state
 
 state = GSState()
 
@@ -506,7 +516,7 @@ def _build_api2_tx_frame(payload: bytes) -> bytes:
     Escapes 0x7E, 0x7D, 0x11, 0x13 everywhere except the leading start delimiter.
     """
     content = bytearray([0x10, 0x01])   # frame type: TX Request, frame ID: 1
-    content += PAYLOAD_XBEE_ADDR        # 64-bit destination (8 bytes)
+    content += bytes.fromhex(state.xbee_dh + state.xbee_dl)  # 64-bit destination (8 bytes)
     content += b'\xFF\xFE'             # 16-bit dest = unknown/let stack decide
     content += b'\x00'                 # broadcast radius = 0
     content += b'\xC0'                 # options = 0xC0 (DigiMesh)
@@ -788,6 +798,15 @@ async def handle_telemetry_line(raw: str):
             _kml_gps_count += 1
             if _kml_gps_count % 10 == 0:  # write KML to disk every 10 valid GPS packets
                 await _save_kml()
+
+    # Final KML save on landing — triggered once per session
+    current_flight_state = parsed_data.get("state", "")
+    if current_flight_state == "LANDED" and not state.kml_landed_saved:
+        state.kml_landed_saved = True
+        await _save_kml()
+        kml_path = get_active_kml()
+        log_json(event="kml_landing_save", file=str(kml_path))
+        await broadcast_ws({"type": "kml_saved", "file": kml_path.name})
 
     # 5) Update counters (rx_count already incremented in step 2)
     state.last_current_a = parsed_data.get("current_a")
@@ -1245,6 +1264,7 @@ async def api_log_set(body: LogBody):
         # Reset KML state so this log gets its own flight path
         state.kml_points.clear()
         state.kml_max_alt = 0.0
+        state.kml_landed_saved = False
 
         # Reset packet-loss tracking so a satellite restart doesn't skew counters
         state.last_pkt = None
@@ -1263,6 +1283,15 @@ async def api_log_set(body: LogBody):
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 # ---- KML download endpoint ----
+@app.post("/api/kml/save")
+async def api_kml_save():
+    """Force an immediate KML save to the data folder."""
+    await _save_kml()
+    kml_path = get_active_kml()
+    if kml_path.exists():
+        return {"ok": True, "file": kml_path.name, "path": str(kml_path)}
+    return JSONResponse({"ok": False, "message": "Not enough GPS data to build KML yet"}, status_code=400)
+
 @app.get("/api/kml")
 async def api_kml_download():
     """Download the auto-saved KML file for the active log session."""
@@ -1361,10 +1390,53 @@ async def ws_telemetry(ws: WebSocket):
 
 
 
+# ---- XBee address config ----
+def _validate_hex_field(val: str, label: str) -> str:
+    """Validate and normalise an 8-char hex address field."""
+    v = val.strip().upper().replace(" ", "")
+    if len(v) != 8:
+        raise HTTPException(400, detail=f"{label} must be exactly 8 hex characters")
+    try:
+        bytes.fromhex(v)
+    except ValueError:
+        raise HTTPException(400, detail=f"{label} contains invalid hex characters")
+    return v
+
+@app.get("/api/xbee/config")
+async def api_xbee_get():
+    """Returns the current XBee destination address."""
+    return {
+        "dh": state.xbee_dh,
+        "dl": state.xbee_dl,
+        "full": state.xbee_dh + state.xbee_dl,
+        "default_dh": DEFAULT_XBEE_DH,
+    }
+
+@app.post("/api/xbee/config")
+async def api_xbee_set(body: XBeeCfg):
+    """
+    Update the XBee destination address at runtime.
+    DH defaults to 0013A200 (same model modules share this).
+    DL is the unique part — change this to target a different unit.
+    Emergency: supply dh to override the high bytes too.
+    """
+    dh = _validate_hex_field(body.dh, "dh")
+    dl = _validate_hex_field(body.dl, "dl")
+    old = state.xbee_dh + state.xbee_dl
+    state.xbee_dh = dh
+    state.xbee_dl = dl
+    log_json(event="xbee_addr_changed", old=old, new=dh + dl)
+    await broadcast_ws({"type": "xbee_addr", "dh": dh, "dl": dl, "full": dh + dl})
+    return {"ok": True, "dh": dh, "dl": dl, "full": dh + dl}
+
 # ---- Static UI ----
 @app.get("/cmd", include_in_schema=False)
 async def cmd_panel():
     return FileResponse(UI_DIR / "cmd.html")
+
+@app.get("/config", include_in_schema=False)
+async def config_panel():
+    return FileResponse(UI_DIR / "config.html")
 
 # Serve the 'ui' folder as a website
 app.mount("/", StaticFiles(directory=str(UI_DIR), html=True), name="ui")

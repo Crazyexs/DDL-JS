@@ -301,7 +301,13 @@ if (!window.__DGS_BOOTED__) {
     setInterval(tickMission, 250);
 
     // Start button for the mission clock
-    el.btnStartMission?.addEventListener('click', () => { if (!st.t0) st.t0 = Date.now(); info("Mission Timer Started."); });
+    el.btnStartMission?.addEventListener('click', () => {
+      if (st.t0) return;
+      st.t0 = Date.now();
+      el.btnStartMission.textContent = 'Running';
+      el.btnStartMission.disabled = true;
+      info('Mission Timer Started.');
+    });
 
     // ---------- MAP LOGIC ---------------------------------------------------
     // Online  → CesiumJS 3D globe with Esri World Imagery (Google Earth quality)
@@ -466,78 +472,23 @@ if (!window.__DGS_BOOTED__) {
       }
     }
 
-    // ── KML export (Google Earth 3D flight path) ──────────────────────
-    // Triggered automatically when the CanSat LANDS, or manually via button.
-    
-    el.btnExportKML?.addEventListener('click', () => {
-      st.kmlExported = false; // Allow manual re-export
-      generateKML();
-    });
-
-    function generateKML() {
-      if (st.kmlPoints.length < 2) {
-        // If triggered manually by button, tell them why it failed
-        if (!st.kmlExported && el.btnExportKML) info('Not enough GPS data to generate a map yet.');
-        return;
+    // ── KML export — server-side save to data folder, no browser popup ──
+    el.btnExportKML?.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/kml/save', { method: 'POST' });
+        if (res.ok) {
+          const d = await res.json();
+          info(`KML saved → ${d.file}. Click again to download.`);
+          // Open server KML download on second click or open directly
+          window.open('/api/kml', '_blank');
+        } else {
+          const d = await res.json().catch(() => ({}));
+          warn(`KML save: ${d.message || 'Not enough GPS data yet'}`);
+        }
+      } catch (e) {
+        err(`KML save error: ${e.message}`);
       }
-      if (st.kmlExported) return;
-      st.kmlExported = true;
-
-      const coords = st.kmlPoints
-        .map(p => `${p.lon.toFixed(6)},${p.lat.toFixed(6)},${p.alt.toFixed(1)}`)
-        .join('\n          ');
-      const first  = st.kmlPoints[0];
-      const last   = st.kmlPoints[st.kmlPoints.length - 1];
-      const apex   = st.kmlPoints.reduce((a, b) => a.alt > b.alt ? a : b);
-      const teamId = st.teamId || 1043;
-
-      const kml = `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-  <Document>
-    <name>DAEDALUS #${teamId} Flight Path</name>
-    <description>Max altitude: ${Math.round(st.maxAlt)} m | Packets: ${st.kmlPoints.length}</description>
-    <Style id="path"><LineStyle><color>ff00aaff</color><width>3</width></LineStyle></Style>
-    <Style id="launch"><IconStyle><color>ff00cc00</color><scale>1.2</scale>
-      <Icon><href>http://maps.google.com/mapfiles/kml/paddle/go.png</href></Icon>
-    </IconStyle></Style>
-    <Style id="land"><IconStyle><color>ff0000ff</color><scale>1.2</scale>
-      <Icon><href>http://maps.google.com/mapfiles/kml/paddle/stop.png</href></Icon>
-    </IconStyle></Style>
-    <Style id="apex"><IconStyle><color>ff00ffff</color><scale>1.1</scale>
-      <Icon><href>http://maps.google.com/mapfiles/kml/shapes/star.png</href></Icon>
-    </IconStyle></Style>
-    <Placemark>
-      <name>Flight Path</name><styleUrl>#path</styleUrl>
-      <LineString>
-        <extrude>1</extrude><tessellate>1</tessellate>
-        <altitudeMode>absolute</altitudeMode>
-        <coordinates>
-          ${coords}
-        </coordinates>
-      </LineString>
-    </Placemark>
-    <Placemark><name>Launch</name><styleUrl>#launch</styleUrl>
-      <Point><altitudeMode>clampToGround</altitudeMode>
-        <coordinates>${first.lon.toFixed(6)},${first.lat.toFixed(6)},0</coordinates>
-      </Point></Placemark>
-    <Placemark><name>Landing</name><styleUrl>#land</styleUrl>
-      <Point><altitudeMode>clampToGround</altitudeMode>
-        <coordinates>${last.lon.toFixed(6)},${last.lat.toFixed(6)},0</coordinates>
-      </Point></Placemark>
-    <Placemark><name>Apogee (${Math.round(apex.alt)} m)</name><styleUrl>#apex</styleUrl>
-      <Point><altitudeMode>absolute</altitudeMode>
-        <coordinates>${apex.lon.toFixed(6)},${apex.lat.toFixed(6)},${apex.alt.toFixed(1)}</coordinates>
-      </Point></Placemark>
-  </Document>
-</kml>`;
-
-      const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.href = url;  a.download = `DAEDALUS_${teamId}_flight.kml`;  a.click();
-      URL.revokeObjectURL(url);
-      info('Google Earth KML downloaded! Open in Google Earth to view 3D flight path.');
-    }
+    });
 
     // ---------- CHART LOGIC (Graphs) ----------
     function getChartColors() {
@@ -697,7 +648,7 @@ if (!window.__DGS_BOOTED__) {
           if (t.state === 'LANDED') {
             speak(`Mission Successful. Highest altitude reached: ${Math.round(st.maxAlt)} meters.`);
             if (el.recoveryGroup) el.recoveryGroup.style.display = 'block';
-            generateKML(); // Auto-export 3D flight path for Google Earth
+            // KML is auto-saved server-side; backend broadcasts kml_saved when done
           } else {
             speak(`State changed to ${t.state}.`);
           }
@@ -1169,6 +1120,10 @@ if (!window.__DGS_BOOTED__) {
             speak(`Log switched to ${label}.`);
           } else if (data.type === 'rssi') {
             if (el.rssiLabel) el.rssiLabel.textContent = `${data.dbm} dBm`;
+          } else if (data.type === 'kml_saved') {
+            info(`KML auto-saved → ${data.file}`);
+          } else if (data.type === 'xbee_addr') {
+            info(`XBee address updated → ${data.full}`);
           } else if (data.type === 'serial_status') {
             const lbl = document.getElementById('serialStatusLabel');
             if (data.connected) {
@@ -1258,8 +1213,8 @@ if (!window.__DGS_BOOTED__) {
     }
 
     el.btnFindPayload?.addEventListener('click', () => {
-      if (!st.gps_lat || !st.gps_lon) {
-        alert("No valid GPS data for payload yet.");
+      if (st.gps_lat === null || st.gps_lon === null) {
+        warn('No GPS fix yet — wait for satellite to report valid coordinates.');
         return;
       }
       el.recoveryOverlay.style.display = 'flex';
@@ -1298,9 +1253,9 @@ if (!window.__DGS_BOOTED__) {
             speak("You have arrived at the payload.");
             st.arrivedSpoken = true;
           }
-        }, geoErr => console.warn("Geo error", geoErr), { enableHighAccuracy: true });
+        }, geoErr => warn(`Geolocation error: ${geoErr.message}`), { enableHighAccuracy: true });
       } else {
-        alert("Geolocation (External GPS) not supported or allowed.");
+        warn('Geolocation not supported or blocked by browser — allow location access and retry.');
       }
     });
 
@@ -1360,7 +1315,7 @@ if (!window.__DGS_BOOTED__) {
         }
         const parts = raw.trim().split(/[\s,;]+/);
         const lat = parseFloat(parts[0]), lon = parseFloat(parts[1]);
-        if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) { alert('Invalid coordinates. Use format: 18.7880, 98.9850'); return; }
+        if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) { err('Invalid coordinates — use format: 18.7880, 98.9850'); return; }
         st.pinnedLat = lat; st.pinnedLon = lon;
         placePinMarker(lat, lon);
         updatePinnedDist();
@@ -1373,7 +1328,7 @@ if (!window.__DGS_BOOTED__) {
       const lat = parseFloat(parts[0]);
       const lon = parseFloat(parts[1]);
       if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-        alert('Invalid coordinates. Use format: 18.7880, 98.9850');
+        err('Invalid coordinates — use format: 18.7880, 98.9850');
         return;
       }
       st.pinnedLat = lat;
