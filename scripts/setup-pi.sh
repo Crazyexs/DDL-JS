@@ -29,20 +29,13 @@ echo ""
 # ─── 1. System packages ───────────────────────────────────────────
 echo ">>> [1/6] Installing system packages..."
 apt-get update -qq
-
-# Bookworm uses 'chromium', Bullseye uses 'chromium-browser'
-CHROMIUM_PKG="chromium-browser"
-if apt-cache show chromium &>/dev/null && ! apt-cache show chromium-browser &>/dev/null; then
-    CHROMIUM_PKG="chromium"
-fi
-
 apt-get install -y --no-install-recommends \
     python3-venv python3-pip \
-    "$CHROMIUM_PKG" \
+    firefox-esr \
     curl \
     unclutter \
     xdotool
-echo "    Done (browser: $CHROMIUM_PKG)."
+echo "    Done."
 
 # ─── 2. Python virtual environment ────────────────────────────────
 echo ""
