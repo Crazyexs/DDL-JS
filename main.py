@@ -43,9 +43,11 @@ DEFAULT_PORT = "/dev/cu.usbserial-00000000"
 # This is the speed of the connection. Both the radio and computer must match this number.
 DEFAULT_BAUD = 115200
 
-# 64-bit address of the PAYLOAD XBee module (ATSH + ATSL, no spaces).
-# Read these from the payload module in XCTU using ATSH and ATSL commands.
-PAYLOAD_XBEE_ADDR = bytes.fromhex("0013A20041F77466")
+# Default 64-bit XBee destination address (DH + DL).
+# DH is always 0013A200 for same-model modules; DL is the unique part.
+# Changed at runtime via POST /api/xbee/config — no restart needed.
+DEFAULT_XBEE_DH = "0013A200"
+DEFAULT_XBEE_DL = "41F77466"
 
 # USB GPS module (VK-172 u-blox 7) port and baud rate
 GPS_PORT = "/dev/ttyACM0"
@@ -151,6 +153,11 @@ class LogBody(BaseModel):
     """Structure for switching the active log file."""
     label: str
 
+class XBeeCfg(BaseModel):
+    """XBee destination address split into DH and DL (each 8 hex chars = 4 bytes)."""
+    dh: str = Field(default=DEFAULT_XBEE_DH, description="Destination High — 8 hex chars")
+    dl: str = Field(default=DEFAULT_XBEE_DL, description="Destination Low  — 8 hex chars")
+
 class Telemetry(BaseModel):
     """
     The structure of a single packet of data from the CanSat.
@@ -216,7 +223,9 @@ class GSState:
     kml_max_alt: float = 0.0    # Track max altitude for KML metadata
     last_current_a: Optional[float] = None  # Most recent current reading (A)
     rssi_dbm: Optional[int] = None          # Last-hop RSSI from ATDB (negative dBm)
-    last_t: Optional[dict] = None           # Most recent parsed telemetry packet (for OLED daemon)
+    xbee_dh: str = DEFAULT_XBEE_DH
+    xbee_dl: str = DEFAULT_XBEE_DL
+    kml_landed_saved: bool = False
 
 state = GSState()
 
@@ -522,7 +531,7 @@ def _build_api2_tx_frame(payload: bytes) -> bytes:
     Escapes 0x7E, 0x7D, 0x11, 0x13 everywhere except the leading start delimiter.
     """
     content = bytearray([0x10, 0x01])   # frame type: TX Request, frame ID: 1
-    content += PAYLOAD_XBEE_ADDR        # 64-bit destination (8 bytes)
+    content += bytes.fromhex(state.xbee_dh + state.xbee_dl)  # 64-bit destination (8 bytes)
     content += b'\xFF\xFE'             # 16-bit dest = unknown/let stack decide
     content += b'\x00'                 # broadcast radius = 0
     content += b'\xC0'                 # options = 0xC0 (DigiMesh)
@@ -656,8 +665,14 @@ def gps_reader_thread_target(loop):
     log_json(event="gps_thread_start", port=GPS_PORT)
     while not _gps_stop.is_set():
         try:
-            ser = serial.Serial(GPS_PORT, GPS_BAUD, timeout=1)
-            log_json(event="gps_connected", port=GPS_PORT)
+            port = GPS_PORT
+            if not Path(port).exists():
+                for alt in ["/dev/ttyUSB0", "/dev/ttyACM1", "/dev/ttyUSB1"]:
+                    if Path(alt).exists():
+                        port = alt
+                        break
+            ser = serial.Serial(port, GPS_BAUD, timeout=1)
+            log_json(event="gps_connected", port=port)
             last_valid_fix_time = time.time()
             while not _gps_stop.is_set():
                 try:
@@ -713,6 +728,7 @@ def gps_reader_thread_target(loop):
             log_json(level="error", event="gps_thread_error", error=str(e))
             time.sleep(5)
     log_json(event="gps_thread_stop")
+
 
 async def serial_writer_worker():
     """
@@ -887,7 +903,15 @@ async def handle_telemetry_line(raw: str):
 
     # 6) Send to UI
     payload = tel.model_dump()
-    state.last_t = payload
+
+    current_flight_state = parsed_data.get("state", "")
+    if current_flight_state == "LANDED" and not state.kml_landed_saved:
+        state.kml_landed_saved = True
+        await _save_kml()
+        kml_path = get_active_kml()
+        log_json(event="kml_landing_save", file=str(kml_path))
+        await broadcast_ws({"type": "kml_saved", "file": kml_path.name})
+
     await broadcast_ws(payload)
     ring.append(json.dumps({"telemetry": payload}))
 
@@ -1351,6 +1375,7 @@ async def api_log_set(body: LogBody):
         # Reset KML state so this log gets its own flight path
         state.kml_points.clear()
         state.kml_max_alt = 0.0
+        state.kml_landed_saved = False
 
         # Reset packet-loss tracking so a satellite restart doesn't skew counters
         state.last_pkt = None
@@ -1464,113 +1489,53 @@ async def ws_telemetry(ws: WebSocket):
         c_info = f"{c.host}:{c.port}" if c else "unknown"
         log_json(event="ws_disconnected", client=c_info)
 
-# ===================== OLED DISPLAY CONTROL =====================
-OLED_STATE_FILE = Path("/tmp/daedalus_oled.json")
-
-def _read_oled_state() -> dict:
+# ---- XBee config endpoints ----
+def _validate_hex_field(val: str, label: str) -> str:
+    v = val.strip().upper().replace(" ", "")
+    if len(v) != 8:
+        raise HTTPException(400, detail=f"{label} must be exactly 8 hex characters")
     try:
-        return json.loads(OLED_STATE_FILE.read_text())
-    except Exception:
-        return {}
+        bytes.fromhex(v)
+    except ValueError:
+        raise HTTPException(400, detail=f"{label} contains invalid hex characters")
+    return v
 
-def _write_oled_state(patch: dict) -> None:
-    cur = _read_oled_state()
-    cur.update(patch)
-    OLED_STATE_FILE.write_text(json.dumps(cur))
-
-class DisplayConfig(BaseModel):
-    mode: Optional[str] = None
-    interface: Optional[str] = None
-    i2c_address: Optional[str] = None
-    telemetry_fields: Optional[list] = None
-    custom_text: Optional[str] = None
-    pixel_art: Optional[str] = None
-
-@app.get("/display", include_in_schema=False)
-async def display_panel():
-    return FileResponse(UI_DIR / "display.html")
-
-@app.get("/api/display/config")
-async def api_display_config_get():
-    """Returns current OLED display config."""
-    st = _read_oled_state()
-    st["oled_mode"] = st.get("mode", "pi_stats")
-    return st
-
-@app.post("/api/display/config")
-async def api_display_config_set(cfg: DisplayConfig):
-    """Updates OLED display config and writes state file for daemon."""
-    patch = {k: v for k, v in cfg.model_dump().items() if v is not None}
-    _write_oled_state(patch)
-    return {"ok": True}
-
-@app.get("/api/display/data")
-async def api_display_data():
-    """Returns live telemetry + Pi stats for OLED daemon to poll."""
-    import socket as _socket
-
-    # Pi stats
-    pi = {}
-    try:
-        import psutil as _ps
-        pi["cpu"]      = _ps.cpu_percent(interval=None)
-        pi["ram_pct"]  = _ps.virtual_memory().percent
-        pi["disk_pct"] = _ps.disk_usage("/").percent
-    except Exception:
-        pass
-    try:
-        pi["temp"] = int(Path("/sys/class/thermal/thermal_zone0/temp").read_text()) / 1000.0
-    except Exception:
-        pi["temp"] = 0.0
-
-    async def _get_volt():
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "vcgencmd", "measure_volts", "core",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=1.0)
-            return float(stdout.decode().strip().replace("volt=","").replace("V",""))
-        except Exception:
-            return 0.0
-
-    pi["volt"] = await _get_volt()
-
-    try:
-        s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
-        s.connect(("10.255.255.255", 1))
-        pi["ip"] = s.getsockname()[0]
-        s.close()
-    except Exception:
-        pi["ip"] = "n/a"
-
-    # OLED daemon alive check
-    async def _check_oled():
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "pgrep", "-f", "oled_daemon.py",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            await asyncio.wait_for(proc.communicate(), timeout=1.0)
-            return proc.returncode == 0
-        except Exception:
-            return False
-
-    oled_ok = await _check_oled()
-
+@app.get("/api/xbee/config")
+async def api_xbee_get():
     return {
-        "pi_stats":      pi,
-        "telemetry":     state.last_t or {},
-        "oled_daemon_ok": oled_ok,
-        "oled_mode":     _read_oled_state().get("mode", "pi_stats"),
+        "dh": state.xbee_dh,
+        "dl": state.xbee_dl,
+        "full": state.xbee_dh + state.xbee_dl,
+        "default_dh": DEFAULT_XBEE_DH,
     }
+
+@app.post("/api/xbee/config")
+async def api_xbee_set(body: XBeeCfg):
+    dh = _validate_hex_field(body.dh, "dh")
+    dl = _validate_hex_field(body.dl, "dl")
+    old = state.xbee_dh + state.xbee_dl
+    state.xbee_dh = dh
+    state.xbee_dl = dl
+    log_json(event="xbee_addr_changed", old=old, new=dh + dl)
+    await broadcast_ws({"type": "xbee_addr", "dh": dh, "dl": dl, "full": dh + dl})
+    return {"ok": True, "dh": dh, "dl": dl, "full": dh + dl}
+
+@app.post("/api/kml/save")
+async def api_kml_save():
+    await _save_kml()
+    kml_path = get_active_kml()
+    if kml_path.exists():
+        return {"ok": True, "file": kml_path.name, "path": str(kml_path)}
+    return JSONResponse({"ok": False, "message": "Not enough GPS data to build KML yet"}, status_code=400)
 
 # ---- Static UI ----
 @app.get("/cmd", include_in_schema=False)
 async def cmd_panel():
     return FileResponse(UI_DIR / "cmd.html")
+
+@app.get("/config", include_in_schema=False)
+async def config_panel():
+    return FileResponse(UI_DIR / "config.html")
 
 # Serve the 'ui' folder as a website
 app.mount("/", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
@@ -1578,7 +1543,7 @@ app.mount("/", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
 if __name__ == "__main__":
     # This part runs when you execute 'python main.py'
     host = "0.0.0.0"
-    port = 8000
+    port = 8080
 
     try:
         # Try to find the actual IP address of this computer
@@ -1596,7 +1561,7 @@ if __name__ == "__main__":
     print("="*50)
     print("Daedalus Ground Station")
     print(f"Local UI: http://localhost:{port}")
-    print("Remote Access: Run 'ngrok http 8000' in a new terminal")
+    print("Remote Access: Run 'ngrok http 8080' in a new terminal")
     print("="*50)
 
     print("Available serial ports:")

@@ -111,6 +111,16 @@ echo ">>> [5/6] Granting serial port access..."
 usermod -aG dialout "$INSTALL_USER"
 echo "    User $INSTALL_USER added to 'dialout' group."
 
+# Grant access to ttyACM0 (USB GPS)
+usermod -aG tty "$INSTALL_USER"
+# udev rule so ttyACM0 is always accessible without sudo
+cat > /etc/udev/rules.d/99-usb-gps.rules << 'UDEV'
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="01a7", SYMLINK+="gps0", GROUP="dialout", MODE="0666"
+SUBSYSTEM=="tty", KERNEL=="ttyACM*", GROUP="dialout", MODE="0666"
+UDEV
+udevadm control --reload-rules
+echo "    GPS udev rules installed."
+
 # ─── 6. Management tool ───────────────────────────────────────────
 echo ""
 echo ">>> [6/6] Installing 'gcs' management tool..."
