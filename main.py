@@ -410,7 +410,7 @@ def _build_kml(points: list, max_alt: float) -> str:
 async def _save_kml():
     """Writes the current KML data to disk."""
     try:
-        kml_str = _build_kml(state.kml_points, state.kml_max_alt)
+        kml_str = _build_kml(list(state.kml_points), state.kml_max_alt)
         if kml_str:
             async with aiofiles.open(get_active_kml(), "w", encoding="utf-8") as f:
                 await f.write(kml_str)

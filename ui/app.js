@@ -36,8 +36,7 @@ if (!window.__DGS_BOOTED__) {
       cesiumHasFix: false,   // True after first GPS → triggers auto-zoom
       map: null,             // 2D Leaflet map (offline / toggled)
       marker: null,          // Leaflet 2D marker
-      kmlPoints: [],         // [{lat,lon,alt}] collected for KML export
-      kmlExported: false,    // KML only exported once (at landing)
+      // kmlPoints/kmlExported removed — KML is now handled server-side via /api/kml/save
       ws: null,      // The WebSocket connection to the server
       lastGPSHMS: null,
       altZero: 0,
@@ -935,10 +934,6 @@ if (!window.__DGS_BOOTED__) {
               if (st.marker) st.marker.setLatLng([lat, lon]);
               st.map.panTo([lat, lon], { animate: false });
             }
-
-            // Collect GPS point for KML export (skip during replay)
-            st.kmlPoints.push({ lat, lon, alt });
-            if (st.kmlPoints.length > 3000) st.kmlPoints.shift();
 
             // Keep recovery overlay marker in sync (Leaflet)
             if (st.recoveryMarker) st.recoveryMarker.setLatLng([lat, lon]);
