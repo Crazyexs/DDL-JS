@@ -299,13 +299,55 @@ if (!window.__DGS_BOOTED__) {
     }
     setInterval(tickMission, 250);
 
-    // Start button for the mission clock
-    el.btnStartMission?.addEventListener('click', () => {
-      if (st.t0) return;
+    // ── Mission timer helpers ──────────────────────────────────────────
+    function logGCSEvent(event, detail) {
+      fetch('/api/gcs/log_event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event, detail }),
+      }).catch(() => {});  // fire-and-forget, never block the UI
+    }
+
+    function startMissionTimer(reason) {
+      if (st.t0) return;   // already running
       st.t0 = Date.now();
-      el.btnStartMission.textContent = 'Running';
-      el.btnStartMission.disabled = true;
-      info('Mission Timer Started.');
+      if (el.btnStartMission) {
+        el.btnStartMission.textContent = '■ Stop Mission';
+        el.btnStartMission.style.background = 'var(--err)';
+        el.btnStartMission.style.color      = '#fff';
+      }
+      const msg = `Mission Timer Started${reason ? ' — ' + reason : ''}.`;
+      info(msg);
+      logGCSEvent('mission_timer_start', reason || 'manual');
+    }
+
+    function stopMissionTimer(reason) {
+      if (!st.t0) return;  // already stopped
+      const elapsed = Date.now() - st.t0;
+      const totalSec = Math.floor(elapsed / 1000);
+      const hh = pad(Math.floor(totalSec / 3600));
+      const mm = pad(Math.floor((totalSec % 3600) / 60));
+      const ss = pad(totalSec % 60);
+      const duration = `${hh}:${mm}:${ss}`;
+      st.t0 = null;
+      if (el.btnStartMission) {
+        el.btnStartMission.textContent      = 'Start Mission';
+        el.btnStartMission.style.background = '';
+        el.btnStartMission.style.color      = '';
+      }
+      if (el.missionSmall) el.missionSmall.textContent = 'Mission: --:--:--';
+      const msg = `Mission Timer Stopped${reason ? ' — ' + reason : ''} | Record Time: ${duration}`;
+      info(msg);
+      logGCSEvent('mission_timer_stop', `${reason || 'manual'} | record_time=${duration}`);
+    }
+
+    // Button: manual start OR emergency stop
+    el.btnStartMission?.addEventListener('click', () => {
+      if (st.t0) {
+        stopMissionTimer('Emergency Stop');
+      } else {
+        startMissionTimer('Manual');
+      }
     });
 
     // ---------- MAP LOGIC ---------------------------------------------------
@@ -637,6 +679,10 @@ if (!window.__DGS_BOOTED__) {
         return;
       }
 
+      // Auto-start mission timer on first live telemetry packet.
+      // Skip if state is already LANDED — mission is over, don't restart until a new flight begins.
+      if (!st.isReplaying && t.state !== 'LANDED') startMissionTimer('Auto — first packet received');
+
       // --- AUDIO & ALTITUDE TRACKING ---
       if (typeof t.altitude_m === 'number') {
         if (t.altitude_m > st.maxAlt) st.maxAlt = t.altitude_m;
@@ -647,6 +693,7 @@ if (!window.__DGS_BOOTED__) {
           if (t.state === 'LANDED') {
             speak(`Mission Successful. Highest altitude reached: ${Math.round(st.maxAlt)} meters.`);
             if (el.recoveryGroup) el.recoveryGroup.style.display = 'block';
+            stopMissionTimer('Auto — payload landed');
             // KML is auto-saved server-side; backend broadcasts kml_saved when done
           } else {
             speak(`State changed to ${t.state}.`);
@@ -1055,13 +1102,111 @@ if (!window.__DGS_BOOTED__) {
     el.manual?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.send?.click(); } });
 
 
+    // ---------- DISPLAY RESET ----------
+    // Called on log switch to wipe all displayed data before loading the new log.
+    function resetDisplayState() {
+      // Flight state variables
+      st.t0              = null;
+      st.maxAlt          = 0;
+      st.lastAlt         = 0;
+      st.speed           = 0;
+      st.lastSpeedMs     = 0;
+      st.lastSpeedAlt    = undefined;
+      st.releaseAlt      = null;
+      st.releaseTime     = null;
+      st.lastSpokenState = null;
+      st.gps_lat         = null;
+      st.gps_lon         = null;
+      st.lastGPSHMS      = null;
+      st.lastChartTs     = 0;
+      st.flightPath      = [];
+      st.cesiumHasFix    = false;
+      st.arrivedSpoken   = false;
+
+      // Clear charts
+      Object.values(st.charts).forEach(c => c?.clear());
+      initCharts();
+
+      // Clear log box
+      if (el.rawBox) el.rawBox.innerHTML = '';
+
+      // Reset UI text displays
+      if (el.missionState)  el.missionState.textContent  = '\u2014';
+      if (el.liveAltitude)  el.liveAltitude.textContent  = '\u2014';
+      if (el.missionBig)    el.missionBig.textContent    = '00:00:00';
+      if (el.rxCount)       el.rxCount.textContent       = '0';
+      if (el.lossCount)     el.lossCount.textContent     = '0';
+      if (el.gpsMini)       el.gpsMini.textContent       = '\u2014';
+      if (el.fallSpeedBox)  el.fallSpeedBox.style.display  = 'none';
+      if (el.recoveryGroup) el.recoveryGroup.style.display = 'none';
+
+      // Reset mission timer and button (inline to avoid calling stopMissionTimer's info log)
+      st.t0 = null;
+      if (el.btnStartMission) {
+        el.btnStartMission.textContent      = 'Start Mission';
+        el.btnStartMission.style.background = '';
+        el.btnStartMission.style.color      = '';
+        el.btnStartMission.disabled         = false;
+      }
+    }
+
+    // ---------- CSV REPLAY ----------
+    // Reads the active log's CSV via /api/csv/replay and replays every row
+    // through onTelemetry() \u2014 restores charts, GPS state, and all displays
+    // from the saved data of whichever log is now active.
+    async function replayFromCSV() {
+      try {
+        const res = await fetch('/api/csv/replay?n=2000');
+        if (!res.ok) return;
+        const { rows, file, total } = await res.json();
+
+        if (!rows || rows.length === 0) {
+          info('New log is empty \u2014 ready to record.');
+          return;
+        }
+
+        st.isReplaying = true;
+        for (const row of rows) {
+          onTelemetry(row);
+        }
+        st.isReplaying = false;
+
+        // After replay, snap the map to the final known GPS position
+        if (st.gps_lat !== null && st.gps_lon !== null) {
+          if (st.cesiumViewer) {
+            const pos = Cesium.Cartesian3.fromDegrees(st.gps_lon, st.gps_lat, st.lastCesiumAlt || 0);
+            if (st.cesiumMarker) st.cesiumMarker.position = new Cesium.ConstantPositionProperty(pos);
+            if (!st.cesiumHasFix) {
+              st.cesiumHasFix = true;
+              st.cesiumViewer.camera.flyTo({
+                destination: Cesium.Cartesian3.fromDegrees(st.gps_lon, st.gps_lat, 1500),
+                orientation: { heading: Cesium.Math.toRadians(0), pitch: Cesium.Math.toRadians(-30), roll: 0 },
+                duration: 1.0,
+              });
+            }
+          } else if (st.map && st.marker) {
+            st.marker.setLatLng([st.gps_lat, st.gps_lon]);
+            st.map.setView([st.gps_lat, st.gps_lon], st.map.getZoom());
+          }
+        }
+
+        const shown = rows.length;
+        const msg   = total > shown
+          ? `\u21a9 Restored ${shown} of ${total} packets from ${file} (showing last ${shown}).`
+          : `\u21a9 Restored ${shown} packets from ${file}.`;
+        info(msg);
+      } catch (e) {
+        st.isReplaying = false;
+        warn(`CSV replay failed: ${e.message}`);
+      }
+    }
+
     // ---------- RING-BUFFER REPLAY ----------
-    // Fetches the server's in-memory ring buffer and replays telemetry packets
-    // into onTelemetry() so charts, key values, and GPS state are restored
-    // without flooding the log box or triggering voice announcements.
+    // On WebSocket connect/reconnect: try the in-memory ring buffer first (fast,
+    // recent live packets). If the ring is empty (e.g. after a log switch + page
+    // refresh), fall back to the CSV so charts are never left blank.
     async function replayMissedPackets() {
       try {
-        // 300 log entries is enough to find 120 telemetry packets for full chart history
         const res = await fetch('/api/logs?n=300');
         if (!res.ok) return;
         const lines = await res.json();
@@ -1076,7 +1221,12 @@ if (!window.__DGS_BOOTED__) {
         }
         st.isReplaying = false;
 
-        if (replayed > 0) info(`\u21a9 Restored ${replayed} packets from server history.`);
+        if (replayed > 0) {
+          info(`\u21a9 Restored ${replayed} packets from server history.`);
+        } else {
+          // Ring was empty (log switch cleared it) \u2014 load from CSV instead
+          await replayFromCSV();
+        }
       } catch (e) {
         st.isReplaying = false;
         warn(`History restore failed: ${e.message}`);
@@ -1113,6 +1263,7 @@ if (!window.__DGS_BOOTED__) {
             if (el.activeLogLabel) el.activeLogLabel.textContent = label;
             cmdEcho(`Log \u2192 ${data.file}`);
             speak(`Log switched to ${label}.`);
+            resetDisplayState();   // wipe old-log data \u2014 charts fill from new incoming data
           } else if (data.type === 'rssi') {
             if (el.rssiLabel) el.rssiLabel.textContent = `${data.dbm} dBm`;
           } else if (data.type === 'kml_saved') {
