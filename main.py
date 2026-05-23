@@ -292,120 +292,233 @@ def get_active_kml() -> Path:
 
 
 def _build_kml(points: list, max_alt: float) -> str:
-    """Builds a KML string from collected GPS points, segmented by flight state."""
+    """
+    Builds a standard KML 2.2 file from GPS points — compatible with all viewers.
+    Includes: state-colored 3D path with extruded walls, ground-shadow track,
+    and event markers (Launch, Apogee, Deployment, Landing).
+    KML color format: AABBGGRR (alpha-blue-green-red).
+    """
     if len(points) < 2:
         return ""
 
-    # Define styles for different states (KML color is aabbggrr)
-    # ff00ff00 = Green (Ascent)
-    # ff00aaff = Orange (Descent)
-    # ffffffff = White (Default)
-    styles = {
-        "ASCENT":  {"color": "ff00ff00", "width": "4"},
-        "DESCENT": {"color": "ff00aaff", "width": "4"},
-        "DEFAULT": {"color": "ffffffff", "width": "3"},
+    # ── Altitude helper ────────────────────────────────────────────────
+    # Use barometric altitude (AGL, calibrated to 0 at launch pad) throughout.
+    # All path elements use altitudeMode=relativeToGround so Google Earth adds
+    # this value on top of the actual terrain — works correctly at any launch site
+    # elevation, and the slope of the rocket ascent/descent is always visible.
+    def kml_alt(p: dict) -> float:
+        return float(p.get("alt") or 0)
+
+    # ── State → colour/width map ───────────────────────────────────────
+    STATE_COLORS: dict = {
+        "LAUNCH_PAD":      ("ff14d414", "3"),   # dim green   — on pad
+        "ASCENT":          ("ff00ee00", "5"),   # bright green — rocket going up
+        "APOGEE":          ("ff00ffff", "4"),   # yellow       — at apogee
+        "DESCENT":         ("ff0055ff", "5"),   # orange       — parachute descent
+        "PROBE_RELEASE":   ("ff00aaff", "4"),   # amber
+        "PAYLOAD_RELEASE": ("ff00ccff", "4"),   # light orange
+        "LANDED":          ("ff0000ff", "3"),   # red          — on the ground
+        "DEFAULT":         ("ffaaaaaa", "3"),   # grey         — unknown
+    }
+    STATE_LABELS: dict = {
+        "LAUNCH_PAD":      "On Launch Pad",
+        "ASCENT":          "Rocket Ascent",
+        "APOGEE":          "Apogee",
+        "DESCENT":         "CanSat Descent (Parachute)",
+        "PROBE_RELEASE":   "Probe Released",
+        "PAYLOAD_RELEASE": "Payload Released",
+        "LANDED":          "Landed",
+        "DEFAULT":         "Unknown Phase",
     }
 
-    # Group points into segments by state
-    segments = []
-    if points:
-        current_state = points[0].get("state", "UNKNOWN")
-        current_segment = [points[0]]
-        
-        for p in points[1:]:
-            s = p.get("state", "UNKNOWN")
-            if s != current_state:
-                segments.append({"state": current_state, "points": current_segment})
-                current_state = s
-                current_segment = [p]
-            else:
-                current_segment.append(p)
-        segments.append({"state": current_state, "points": current_segment})
+    # ── Style definitions ──────────────────────────────────────────────
+    style_defs = ""
+    for sid, (color, width) in STATE_COLORS.items():
+        wall_fill = "44" + color[2:]   # 27 % opacity fill on extruded walls
+        style_defs += (
+            f'\n  <Style id="s_{sid}">'
+            f'<LineStyle><color>{color}</color><width>{width}</width></LineStyle>'
+            f'<PolyStyle><color>{wall_fill}</color><outline>0</outline></PolyStyle>'
+            f'</Style>'
+        )
+    style_defs += """
+  <Style id="s_launch">
+    <IconStyle><scale>1.4</scale><color>ff00cc00</color>
+      <Icon><href>http://maps.google.com/mapfiles/kml/paddle/go.png</href></Icon>
+    </IconStyle>
+    <LabelStyle><color>ff00cc00</color><scale>1.1</scale></LabelStyle>
+  </Style>
+  <Style id="s_apogee">
+    <IconStyle><scale>1.3</scale><color>ff00ffff</color>
+      <Icon><href>http://maps.google.com/mapfiles/kml/shapes/star.png</href></Icon>
+    </IconStyle>
+    <LabelStyle><color>ff00ffff</color><scale>1.0</scale></LabelStyle>
+  </Style>
+  <Style id="s_deploy">
+    <IconStyle><scale>1.1</scale><color>ff0055ff</color>
+      <Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon>
+    </IconStyle>
+    <LabelStyle><color>ff0055ff</color><scale>0.9</scale></LabelStyle>
+  </Style>
+  <Style id="s_landing">
+    <IconStyle><scale>1.4</scale><color>ff0000ff</color>
+      <Icon><href>http://maps.google.com/mapfiles/kml/paddle/stop.png</href></Icon>
+    </IconStyle>
+    <LabelStyle><color>ff0000ff</color><scale>1.1</scale></LabelStyle>
+  </Style>
+  <Style id="s_shadow">
+    <LineStyle><color>55ffffff</color><width>1</width></LineStyle>
+  </Style>"""
 
-    placemarks = ""
-    for i, seg in enumerate(segments):
-        state_name = seg["state"]
-        pts = seg["points"]
-        if len(pts) < 1: continue
-        
-        # If it's a single point segment, we can't draw a line, but we usually want to connect to the next
-        # So we add the first point of the next segment if it exists
-        if i < len(segments) - 1:
-            pts_to_draw = pts + [segments[i+1]["points"][0]]
+    # ── Segment path by flight state ──────────────────────────────────
+    segments: list = []
+    curr_state = points[0].get("state", "UNKNOWN")
+    curr_seg   = [points[0]]
+    for p in points[1:]:
+        s = p.get("state", "UNKNOWN")
+        if s != curr_state:
+            segments.append({"state": curr_state, "pts": curr_seg})
+            curr_state, curr_seg = s, [p]
         else:
-            pts_to_draw = pts
+            curr_seg.append(p)
+    segments.append({"state": curr_state, "pts": curr_seg})
 
-        if len(pts_to_draw) < 2: continue
+    path_xml = ""
+    for i, seg in enumerate(segments):
+        sname = seg["state"]
+        pts   = seg["pts"]
+        # Bridge gap to next segment so path has no holes at state transitions
+        draw  = pts + ([segments[i+1]["pts"][0]] if i < len(segments) - 1 else [])
+        if len(draw) < 2:
+            continue
+        sid    = sname if sname in STATE_COLORS else "DEFAULT"
+        label  = STATE_LABELS.get(sname, sname)
+        coords = "\n          ".join(
+            f"{p['lon']:.6f},{p['lat']:.6f},{kml_alt(p):.1f}" for p in draw
+        )
+        path_xml += (
+            f'\n    <Placemark>'
+            f'<name>{label} ({len(pts)} pts)</name>'
+            f'<StyleUrl>#s_{sid}</StyleUrl>'
+            f'<LineString>'
+            f'<extrude>1</extrude><tessellate>1</tessellate>'
+            f'<altitudeMode>relativeToGround</altitudeMode>'
+            f'<coordinates>\n          {coords}\n        </coordinates>'
+            f'</LineString></Placemark>'
+        )
 
-        style = styles.get(state_name, styles["DEFAULT"])
-        color = style["color"]
-        width = style["width"]
-        
-        coords = "\n          ".join(f"{p['lon']:.6f},{p['lat']:.6f},{p['alt']:.1f}" for p in pts_to_draw)
-        
-        placemarks += f"""
-    <Placemark>
-      <name>{state_name} Phase</name>
-      <Style><LineStyle><color>{color}</color><width>{width}</width></LineStyle></Style>
-      <LineString>
-        <extrude>1</extrude><tessellate>1</tessellate>
-        <altitudeMode>absolute</altitudeMode>
-        <coordinates>
-          {coords}
-        </coordinates>
-      </LineString>
-    </Placemark>"""
+    # Ground-shadow track — projects flight path onto terrain so horizontal drift is visible
+    shadow_coords = "\n          ".join(
+        f"{p['lon']:.6f},{p['lat']:.6f},0" for p in points
+    )
+    shadow_xml = (
+        "\n    <Placemark>"
+        "<name>Ground Track (Shadow)</name>"
+        "<StyleUrl>#s_shadow</StyleUrl>"
+        "<LineString>"
+        "<tessellate>1</tessellate>"
+        "<altitudeMode>clampToGround</altitudeMode>"
+        f"<coordinates>\n          {shadow_coords}\n        </coordinates>"
+        "</LineString></Placemark>"
+    )
 
-    # Add Deployment marker if we find a state change that looks like deployment
-    deployment_placemark = ""
+    # ── Key event markers ─────────────────────────────────────────────
+    first = points[0]
+    last  = points[-1]
+    apex  = max(points, key=kml_alt)
+    apex_alt_m = kml_alt(apex)
+
+    events_xml = (
+        f'\n    <Placemark><name>Launch Site</name>'
+        f'<description><![CDATA[<b>Rocket Launch</b><br/>'
+        f'Lat: {first["lat"]:.5f}&deg; Lon: {first["lon"]:.5f}&deg;<br/>'
+        f'Mission Time: {first.get("mission_time", "—")}]]></description>'
+        f'<StyleUrl>#s_launch</StyleUrl>'
+        f'<Point><altitudeMode>clampToGround</altitudeMode>'
+        f'<coordinates>{first["lon"]:.6f},{first["lat"]:.6f},0</coordinates>'
+        f'</Point></Placemark>'
+
+        f'\n    <Placemark><name>Apogee — {int(apex_alt_m)} m</name>'
+        f'<description><![CDATA[<b>Maximum Altitude</b><br/>'
+        f'Altitude: {apex_alt_m:.1f} m<br/>'
+        f'Lat: {apex["lat"]:.5f}&deg; Lon: {apex["lon"]:.5f}&deg;<br/>'
+        f'Mission Time: {apex.get("mission_time", "—")}]]></description>'
+        f'<StyleUrl>#s_apogee</StyleUrl>'
+        f'<Point><altitudeMode>relativeToGround</altitudeMode>'
+        f'<coordinates>{apex["lon"]:.6f},{apex["lat"]:.6f},{apex_alt_m:.1f}</coordinates>'
+        f'</Point></Placemark>'
+    )
+
+    # One marker per state-transition event (deployment, descent begin, etc.)
+    seen_transitions: set = set()
+    deploy_states = {"DESCENT", "PROBE_RELEASE", "PAYLOAD_RELEASE", "APOGEE"}
+    deploy_labels = {
+        "DESCENT":         "Parachute Descent Begin",
+        "PROBE_RELEASE":   "Probe Released",
+        "PAYLOAD_RELEASE": "Payload Released",
+        "APOGEE":          "Apogee State",
+    }
     for i in range(1, len(points)):
         prev_s = points[i-1].get("state", "")
         curr_s = points[i].get("state", "")
-        # Look for the transition out of ASCENT
-        if prev_s == "ASCENT" and curr_s != "ASCENT":
-            p = points[i]
-            deployment_placemark = f"""
-    <Placemark><name>Deployment Point</name>
-      <Style><IconStyle><scale>1.2</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>
-      <Point><altitudeMode>absolute</altitudeMode>
-        <coordinates>{p['lon']:.6f},{p['lat']:.6f},{p['alt']:.1f}</coordinates>
-      </Point></Placemark>"""
-            break
+        key    = f"{prev_s}->{curr_s}"
+        if curr_s in deploy_states and key not in seen_transitions:
+            seen_transitions.add(key)
+            ep    = points[i]
+            ep_alt = kml_alt(ep)
+            dlabel = deploy_labels.get(curr_s, curr_s)
+            events_xml += (
+                f'\n    <Placemark><name>{dlabel}</name>'
+                f'<description><![CDATA[<b>{dlabel}</b><br/>'
+                f'Altitude: {ep_alt:.1f} m<br/>'
+                f'Lat: {ep["lat"]:.5f}&deg; Lon: {ep["lon"]:.5f}&deg;<br/>'
+                f'Mission Time: {ep.get("mission_time", "—")}]]></description>'
+                f'<StyleUrl>#s_deploy</StyleUrl>'
+                f'<Point><altitudeMode>relativeToGround</altitudeMode>'
+                f'<coordinates>{ep["lon"]:.6f},{ep["lat"]:.6f},{ep_alt:.1f}</coordinates>'
+                f'</Point></Placemark>'
+            )
 
-    first = points[0]
-    last = points[-1]
-    apex = max(points, key=lambda p: p['alt'])
+    events_xml += (
+        f'\n    <Placemark><name>Landing Site</name>'
+        f'<description><![CDATA[<b>CanSat Landing</b><br/>'
+        f'Lat: {last["lat"]:.5f}&deg; Lon: {last["lon"]:.5f}&deg;<br/>'
+        f'Mission Time: {last.get("mission_time", "—")}]]></description>'
+        f'<StyleUrl>#s_landing</StyleUrl>'
+        f'<Point><altitudeMode>clampToGround</altitudeMode>'
+        f'<coordinates>{last["lon"]:.6f},{last["lat"]:.6f},0</coordinates>'
+        f'</Point></Placemark>'
+    )
 
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-  <Document>
-    <name>DAEDALUS #{TEAM_ID} Flight Path</name>
-    <description>Max altitude: {int(max_alt)} m | Packets: {len(points)}</description>
-    <Style id="launch"><IconStyle><color>ff00cc00</color><scale>1.2</scale>
-      <Icon><href>http://maps.google.com/mapfiles/kml/paddle/go.png</href></Icon>
-    </IconStyle></Style>
-    <Style id="land"><IconStyle><color>ff0000ff</color><scale>1.2</scale>
-      <Icon><href>http://maps.google.com/mapfiles/kml/paddle/stop.png</href></Icon>
-    </IconStyle></Style>
-    <Style id="apex"><IconStyle><color>ff00ffff</color><scale>1.1</scale>
-      <Icon><href>http://maps.google.com/mapfiles/kml/shapes/star.png</href></Icon>
-    </IconStyle></Style>
-    {placemarks}
-    {deployment_placemark}
-    <Placemark><name>Launch</name><styleUrl>#launch</styleUrl>
-      <Point><altitudeMode>clampToGround</altitudeMode>
-        <coordinates>{first['lon']:.6f},{first['lat']:.6f},0</coordinates>
-      </Point></Placemark>
-    <Placemark><name>Landing</name><styleUrl>#land</styleUrl>
-      <Point><altitudeMode>clampToGround</altitudeMode>
-        <coordinates>{last['lon']:.6f},{last['lat']:.6f},0</coordinates>
-      </Point></Placemark>
-    <Placemark><name>Apogee ({int(apex['alt'])} m)</name><styleUrl>#apex</styleUrl>
-      <Point><altitudeMode>absolute</altitudeMode>
-        <coordinates>{apex['lon']:.6f},{apex['lat']:.6f},{apex['alt']:.1f}</coordinates>
-      </Point></Placemark>
-  </Document>
-</kml>"""
+    # ── LookAt — initial camera centred between launch and landing ────
+    ctr_lat   = (first["lat"] + last["lat"]) / 2
+    ctr_lon   = (first["lon"] + last["lon"]) / 2
+    cam_range = max(3000, int(apex_alt_m) * 4)
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<kml xmlns="http://www.opengis.net/kml/2.2">\n'
+        '  <Document>\n'
+        f'    <name>DAEDALUS #{TEAM_ID} — Full Flight Path</name>\n'
+        f'    <description>Max altitude: {int(max_alt)} m | GPS points: {len(points)}</description>\n'
+        f'    <LookAt>\n'
+        f'      <longitude>{ctr_lon:.6f}</longitude>\n'
+        f'      <latitude>{ctr_lat:.6f}</latitude>\n'
+        f'      <altitude>0</altitude><heading>0</heading><tilt>50</tilt>\n'
+        f'      <range>{cam_range}</range>\n'
+        f'      <altitudeMode>relativeToGround</altitudeMode>\n'
+        f'    </LookAt>\n'
+        f'{style_defs}\n'
+        '    <Folder><name>Flight Path</name><open>1</open>\n'
+        f'{path_xml}\n'
+        f'{shadow_xml}\n'
+        '    </Folder>\n'
+        '    <Folder><name>Key Events</name><open>1</open>\n'
+        f'{events_xml}\n'
+        '    </Folder>\n'
+        '  </Document>\n'
+        '</kml>'
+    )
 
 async def _save_kml():
     """Writes the current KML data to disk."""
@@ -877,10 +990,13 @@ async def handle_telemetry_line(raw: str):
         if gps_lat != 0.0 and gps_lon != 0.0 and gps_sats > 5:  # Only save with good GPS fix (>5 sats)
             global _kml_gps_count
             state.kml_points.append({
-                "lat": gps_lat, 
-                "lon": gps_lon, 
-                "alt": max(0, alt_m),
-                "state": parsed_data.get("state", "UNKNOWN")
+                "lat":          gps_lat,
+                "lon":          gps_lon,
+                "alt":          max(0, alt_m),                              # barometric AGL
+                "gps_alt":      float(parsed_data.get("gps_altitude_m") or 0),  # GPS ASL (absolute)
+                "state":        parsed_data.get("state", "UNKNOWN"),
+                "ts":           now_utc_iso(),                              # UTC for gx:Track animation
+                "mission_time": str(parsed_data.get("mission_time", "")),
             })
             if alt_m > state.kml_max_alt:
                 state.kml_max_alt = alt_m
@@ -1377,8 +1493,14 @@ async def api_log_set(body: LogBody):
         state.kml_max_alt = 0.0
         state.kml_landed_saved = False
 
-        # Reset packet-loss tracking so a satellite restart doesn't skew counters
-        state.last_pkt = None
+        # Reset packet-loss and receive counters — fresh per-log statistics
+        state.last_pkt   = None
+        state.rx_count   = 0
+        state.loss_count = 0
+
+        # Clear ring buffer so reconnect-replay only ever shows this log's data.
+        # The new log's CSV is the authoritative history source after this point.
+        ring.clear()
 
         display = label or "default"
         log_json(event="log_switched", label=display, file=str(new_csv))
@@ -1392,6 +1514,94 @@ async def api_log_set(body: LogBody):
     except Exception as e:
         log_json(level="error", event="log_set_failed", error=str(e))
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+# ---- Frontend event logger ----
+class GCSEventBody(BaseModel):
+    event: str
+    detail: Optional[str] = None
+
+@app.post("/api/gcs/log_event")
+async def api_gcs_log_event(body: GCSEventBody):
+    """Writes a frontend-side event (e.g. mission timer start/stop) to ground.json."""
+    kw: dict = {"event": body.event}
+    if body.detail:
+        kw["detail"] = body.detail
+    log_json(**kw)
+    return {"ok": True}
+
+# ---- CSV replay endpoint ----
+@app.get("/api/csv/replay")
+async def api_csv_replay(n: int = 2000):
+    """
+    Read the active CSV log and return parsed telemetry rows for frontend replay.
+    Called by the browser after a log switch so charts/map rebuild from saved data.
+    Returns up to the last `n` data rows (default 2000) to keep response fast.
+    """
+    path = get_active_csv()
+    if not path.exists():
+        return {"rows": [], "file": path.name, "total": 0}
+
+    try:
+        async with aiofiles.open(path, "r", encoding="utf-8") as f:
+            raw_lines = await f.readlines()
+    except Exception as e:
+        return JSONResponse({"rows": [], "error": str(e)}, status_code=500)
+
+    # Row 0 is the CSV header — skip it; limit to last n data rows
+    data_lines = [ln.rstrip("\r\n") for ln in raw_lines[1:] if ln.strip()]
+    total = len(data_lines)
+    data_lines = data_lines[-n:]
+
+    min_required = len([x for x in TELEMETRY_CONFIG if not x.get("optional", False)])
+    results: List[dict] = []
+    rx_seq    = 0
+    last_pkt_r: Optional[int] = None
+    loss_r    = 0
+
+    for raw in data_lines:
+        reader = csv.reader([raw], skipinitialspace=True)
+        try:
+            parts = next(reader)
+        except StopIteration:
+            continue
+        parts = [p.strip() for p in parts]
+        if len(parts) < min_required:
+            continue
+
+        parsed: dict = {}
+        for i, cfg in enumerate(TELEMETRY_CONFIG):
+            key   = cfg.get("internal_key")
+            dtype = cfg.get("type")
+            val   = (parts[i] if i < len(parts) else "").strip()
+            try:
+                if   dtype == "int":   value: object = int(val)   if val else 0
+                elif dtype == "float": value = float(val) if val else 0.0
+                else:                  value = val
+            except ValueError:
+                value = 0 if dtype == "int" else 0.0 if dtype == "float" else ""
+            if key:
+                parsed[key] = value
+
+        # Recalculate packet-loss from sequence numbers in the saved CSV
+        rx_seq += 1
+        pkt_r = int(parsed.get("packet_count") or 0)
+        if last_pkt_r is not None and pkt_r > 0 and pkt_r > last_pkt_r + 1:
+            loss_r += pkt_r - last_pkt_r - 1
+        if pkt_r > 0:
+            last_pkt_r = pkt_r
+
+        parsed["gs_ts_utc"]    = ""
+        parsed["gs_rx_count"]  = rx_seq
+        parsed["gs_loss_total"] = loss_r
+        parsed["gs_raw_line"]  = raw
+
+        try:
+            tel = Telemetry(**parsed)
+            results.append(tel.model_dump())
+        except Exception:
+            continue
+
+    return {"rows": results, "file": path.name, "total": total}
 
 # ---- KML download endpoint ----
 @app.get("/api/kml")
