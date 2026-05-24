@@ -106,8 +106,10 @@ def load_telemetry_config():
             { "csv_header": "GPS_LONGITUDE", "internal_key": "gps_lon",        "type": "float" },
             { "csv_header": "GPS_SATS",      "internal_key": "gps_sats",       "type": "int"   },
             { "csv_header": "CMD_ECHO",      "internal_key": "cmd_echo",       "type": "str"   },
+            { "csv_header": "ARM_STATE",     "internal_key": "arm_state",      "type": "str"   },
+            { "csv_header": "DEPLOY",        "internal_key": "deploy",         "type": "str"   },
             { "csv_header": "YAW",           "internal_key": "yaw",            "type": "float" },
-            { "csv_header": "TOF",           "internal_key": "tof",            "type": "float" },
+            { "csv_header": "HEADING_GPS",   "internal_key": "heading_gps",    "type": "float" },
         ]
     with open(config_path, "r") as f:
         return json.load(f)
