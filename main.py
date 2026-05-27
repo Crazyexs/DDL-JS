@@ -1,7 +1,5 @@
 import uvicorn
 import socket
-import random
-import math
 import sys
 import os
 import re
@@ -21,7 +19,7 @@ import serial
 from serial import SerialException
 import serial.tools.list_ports
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body, Request
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -63,8 +61,8 @@ UI_DIR.mkdir(parents=True, exist_ok=True)
 # It looks like: Flight_1043.csv
 CSV_CURRENT = DATA_DIR / f"Flight_{TEAM_ID:04}.csv"
 
-# A list of common connection speeds to choose from.
-BAUD_PRESETS = [9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, 921600]
+# Only 115200 is supported — XBee 900HP default for this mission.
+BAUD_PRESETS = [115200]
 
 # ===================== TELEMETRY CONFIG (Dynamic Loading) =====================
 # We load the structure of the CSV from 'telemetry_config.json'
@@ -155,7 +153,7 @@ class XBeeCfg(BaseModel):
 class Telemetry(BaseModel):
     """
     The structure of a single packet of data from the CanSat.
-    NOTE: 'internal_key' in telemetry_config.json MUST match these field names.
+    Field order matches telemetry_config.json (CSV column order).
     """
     team_id: int = 0
     mission_time: str = "00:00:00"
@@ -180,18 +178,9 @@ class Telemetry(BaseModel):
     gps_sats: int = 0
     cmd_echo: str = "—"
     arm_state: str = "DISARMED"
+    deploy: str = "0"
     yaw: float = 0.0
     heading_gps: float = 0.0
-    tof: float = 0.0
-    velocity_e: float = 0.0
-    velocity_n: float = 0.0
-    deploy: str = "0"
-    servo1_target: float = 0.0
-    servo1_angle: float = 0.0
-    servo2_target: float = 0.0
-    servo2_angle: float = 0.0
-    servo3_target: float = 0.0
-    servo3_angle: float = 0.0
 
     # Extra info added by the Ground Station
     gs_ts_utc: str
@@ -263,7 +252,9 @@ def _select_serial_port_at_startup():
         pass
     print("=" * 54 + "\n")
 
-_select_serial_port_at_startup()
+# NOTE: _select_serial_port_at_startup() is intentionally NOT called at import
+# time — it now runs inside the FastAPI lifespan startup so importing this
+# module (tests, reloaders) does not block on stdin.
 
 # ===================== KML AUTO-SAVE =====================
 KML_CURRENT = DATA_DIR / f"Flight_{TEAM_ID:04}.kml"
@@ -524,6 +515,7 @@ ring: Deque[str] = deque(maxlen=10_000)   # Keeps the last 10,000 log messages i
 ws_clients: Set[WebSocket] = set()        # A list of all web browsers currently connected
 uplink_q: asyncio.Queue[str] = asyncio.Queue(maxsize=100) # A queue (line) of commands waiting to be sent
 _kml_gps_count: int = 0                   # Count valid GPS packets; write KML every 10
+_csv_write_lock: asyncio.Lock = asyncio.Lock()  # Serialises CSV append so concurrent writers don't interleave bytes
 
 def ensure_csv_header(path: Optional[Path] = None):
     """Checks if the CSV file exists. If not, creates it and adds the header row."""
@@ -795,41 +787,37 @@ def now_utc_iso() -> str:
     """Returns the current time in UTC as a string."""
     return datetime.now(timezone.utc).isoformat()
 
+_BROADCAST_BUDGET = 64  # Maximum simultaneously-scheduled broadcasts.
+_pending_broadcasts: Set[asyncio.Future] = set()
+
 def _thread_broadcast(payload: dict, loop) -> None:
-    """Call broadcast_ws from a non-async thread. Silently ignored if loop is closing."""
+    """Call broadcast_ws from a non-async thread. Drops the broadcast if too
+    many are already pending so a slow event loop cannot grow an unbounded
+    scheduling queue under high TX rates."""
+    if len(_pending_broadcasts) >= _BROADCAST_BUDGET:
+        return
     try:
-        asyncio.run_coroutine_threadsafe(broadcast_ws(payload), loop)
+        fut = asyncio.run_coroutine_threadsafe(broadcast_ws(payload), loop)
     except RuntimeError:
-        pass
+        return
+    _pending_broadcasts.add(fut)
+    fut.add_done_callback(_pending_broadcasts.discard)
 
 async def broadcast_ws(payload: dict):
-    """Sends a JSON message to all connected web browsers."""
+    """Sends a JSON message to all connected web browsers in parallel so a
+    single slow client cannot back-pressure the telemetry pipeline."""
     text = json.dumps(payload)
-    dead = []
-    
-    # Create a list of connected clients for logging
-    # client_list = []
-    # for ws in ws_clients:
-    #     c = ws.client
-    #     if c:
-    #         client_list.append(f"{c.host}:{c.port}")
-    #     else:
-    #         client_list.append("unknown")
-            
-    # log_json(event="ws_broadcast", clients=client_list)
-    
-    # Send the message to each client
-    for ws in list(ws_clients):
-        try:
-            await ws.send_text(text)
-        except Exception:
-            # If sending fails, assume the client disconnected
-            dead.append(ws)
-    
-    # Remove disconnected clients
-    for ws in dead:
-        ws_clients.discard(ws)
-        log_json(level="info", event="ws_client_disconnected", remaining=len(ws_clients))
+    clients = list(ws_clients)
+    if not clients:
+        return
+    results = await asyncio.gather(
+        *[ws.send_text(text) for ws in clients],
+        return_exceptions=True,
+    )
+    for ws, res in zip(clients, results):
+        if isinstance(res, Exception):
+            ws_clients.discard(ws)
+            log_json(level="info", event="ws_client_disconnected", remaining=len(ws_clients))
 
 async def handle_telemetry_line(raw: str):
     """
@@ -840,9 +828,11 @@ async def handle_telemetry_line(raw: str):
     # ── STEP 0: Save RAW line unconditionally ────────────────────────────────
     # Every byte the CanSat sends is written to disk immediately, before any
     # parsing or validation. Nothing is ever discarded or lost.
+    # Lock ensures concurrent writers (live serial + sim) never interleave bytes.
     if state.csv_ready:
-        async with aiofiles.open(get_active_csv(), "a", encoding="utf-8", newline="") as f:
-            await f.write(raw + "\r\n")
+        async with _csv_write_lock:
+            async with aiofiles.open(get_active_csv(), "a", encoding="utf-8", newline="") as f:
+                await f.write(raw + "\r\n")
 
     # ── STEP 1: Parse fields for UI display ──────────────────────────────
     reader = csv.reader([raw], skipinitialspace=True)
@@ -900,7 +890,7 @@ async def handle_telemetry_line(raw: str):
     gps_sats = parsed_data.get("gps_sats", 0)
     alt_m = parsed_data.get("altitude_m", 0.0)
     if isinstance(gps_lat, (int, float)) and isinstance(gps_lon, (int, float)):
-        if gps_lat != 0.0 and gps_lon != 0.0 and gps_sats > 5:  # Only save with good GPS fix (>5 sats)
+        if gps_lat != 0.0 and gps_lon != 0.0 and gps_sats > 3:  # Only save with good GPS fix (>3 sats, matches UI)
             global _kml_gps_count
             state.kml_points.append({
                 "lat":          gps_lat,
@@ -980,15 +970,23 @@ async def sim_file_streamer(file_path: Path):
                 if "$" in s:
                     s = s.replace("$", f"{TEAM_ID:04}")
 
+                msg: Optional[str] = None
                 if s.startswith("CMD,"):
-                    await uplink_q.put(s)
+                    msg = s
                 else:
                     try:
                         float(s)  # accept both int and float pressure values
-                        await uplink_q.put(f"CMD,{TEAM_ID:04},SIMP,{s}")
+                        msg = f"CMD,{TEAM_ID:04},SIMP,{s}"
                     except ValueError:
                         pass  # skip header rows or unrecognised lines
-                
+
+                # Non-blocking put — preserves 1 Hz cadence even if queue is full.
+                if msg is not None:
+                    try:
+                        uplink_q.put_nowait(msg)
+                    except asyncio.QueueFull:
+                        log_json(level="warn", event="sim_drop_full_queue", line=msg)
+
                 # Wait 1 second between sends (Requirement: 1 Hz)
                 await asyncio.sleep(1.0)
     except asyncio.CancelledError:
@@ -1008,135 +1006,23 @@ async def sim_sender(file_path: Path):
     """
     # 1. Enable Simulation Mode
     state.sim_enabled = True
-    await uplink_q.put(f"CMD,{TEAM_ID:04},SIM,ENABLE")
+    try:
+        uplink_q.put_nowait(f"CMD,{TEAM_ID:04},SIM,ENABLE")
+    except asyncio.QueueFull:
+        log_json(level="warn", event="sim_drop_full_queue", line="SIM,ENABLE")
     log_json(event="sim_command", cmd="SIM,ENABLE")
     await asyncio.sleep(1.0) # Wait for radio/processing
-    
+
     # 2. Activate Simulation Mode
-    await uplink_q.put(f"CMD,{TEAM_ID:04},SIM,ACTIVATE")
+    try:
+        uplink_q.put_nowait(f"CMD,{TEAM_ID:04},SIM,ACTIVATE")
+    except asyncio.QueueFull:
+        log_json(level="warn", event="sim_drop_full_queue", line="SIM,ACTIVATE")
     log_json(event="sim_command", cmd="SIM,ACTIVATE")
     await asyncio.sleep(1.0)
 
     # 3. Stream
     await sim_file_streamer(file_path)
-
-# ===================== DUMMY DATA GENERATOR (No Hardware Needed) =====================
-dummy_task: Optional[asyncio.Task] = None
-dummy_state = {
-    "packet": 0,
-    "lat": 18.788,
-    "lon": 98.985,
-    "last_alt": 0.0,
-}
-
-def hms_from_seconds(s: float) -> str:
-    """Converts seconds into HH:MM:SS format."""
-    s = int(s)
-    hours = s // 3600
-    minutes = (s % 3600) // 60
-    seconds = s % 60
-    return f"{hours:02}:{minutes:02}:{seconds:02}"
-
-def generate_dummy_telemetry_line() -> str:
-    """Creates a fake CSV telemetry line for testing the UI."""
-    dummy_state["packet"] += 1
-    pkt = dummy_state["packet"]
-    
-    # Move GPS slightly
-    dummy_state["lat"] += (random.random() - 0.5) * 0.0002
-    dummy_state["lon"] += (random.random() - 0.5) * 0.0002
-    
-    # Simulate altitude change (go up a bit, then drop instantly to 0)
-    if pkt < 5:
-        altitude = 100 + (pkt * 10) + (random.random() - 0.5) * 5
-    else:
-        altitude = 150 - ((pkt - 5) * 5) + (random.random() - 0.5) * 5
-
-    if altitude <= 0:
-        altitude = 0.0 + (random.random() - 0.5) * 0.5
-
-    temp = 25 - (altitude / 100)
-    voltage = 12.6 - (pkt / 500)
-    current = 0.5 + (random.random() - 0.5) * 0.2
-    
-    mission_time = hms_from_seconds(pkt)
-    
-    # Determine flight state based on altitude
-    flight_state = 'LAUNCH_PAD'
-    if dummy_state.get("has_landed", False) or altitude <= 0.5:
-        flight_state = 'LANDED'
-        dummy_state["has_landed"] = True
-    elif altitude > 20:
-        if altitude > dummy_state["last_alt"]:
-            flight_state = 'ASCENT'
-        else:
-            flight_state = 'DESCENT'
-    elif dummy_state["last_alt"] > 20 and altitude <= 20:
-        flight_state = 'LANDED'
-        dummy_state["has_landed"] = True
-
-    dummy_state["last_alt"] = altitude
-
-    # Dictionary of all current dummy values
-    val_map = {
-        "team_id": str(TEAM_ID),
-        "mission_time": mission_time,
-        "packet_count": str(pkt),
-        "mode": 'F',
-        "state": flight_state,
-        "altitude_m": f"{altitude:.2f}",
-        "temperature_c": f"{temp:.2f}",
-        "pressure_kpa": f"{101.325 * math.pow(1 - 2.25577e-5 * altitude, 5.25588):.3f}",
-        "voltage_v": f"{voltage:.2f}",
-        "current_a": f"{current:.3f}",
-        "gyro_r_dps": f"{(random.random() - 0.5) * 20:.3f}",
-        "gyro_p_dps": f"{(random.random() - 0.5) * 20:.3f}",
-        "gyro_y_dps": f"{180 + (random.random() - 0.5) * 40:.3f}",
-        "accel_r_dps2": f"{(random.random() - 0.5) * 2:.3f}",
-        "accel_p_dps2": f"{(random.random() - 0.5) * 2:.3f}",
-        "accel_y_dps2": f"{9.8 + (random.random() - 0.5):.3f}",
-        "gps_time": datetime.now(timezone.utc).strftime("%H:%M:%S"),
-        "gps_altitude_m": f"{altitude + 10:.2f}",
-        "gps_lat": f"{dummy_state['lat']:.4f}",
-        "gps_lon": f"{dummy_state['lon']:.4f}",
-        "gps_sats": str(random.randint(8, 12)),
-        "cmd_echo": "CMD_OK" if pkt % 10 != 0 else "CX,ON",
-        "arm_state": "ARMED" if pkt > 3 else "DISARMED",
-        "yaw": f"{(pkt * 5) % 360:.2f}",
-        "heading_gps": f"{(pkt * 3) % 360:.2f}",
-        "tof": f"{random.uniform(0, 5):.3f}",
-        "velocity_e": f"{(random.random() - 0.5) * 4:.3f}",
-        "velocity_n": f"{(random.random() - 0.5) * 4:.3f}",
-        "deploy": "1" if flight_state in ("DESCENT", "LANDED") else "0",
-        "servo1_target": f"{90 + (random.random() - 0.5) * 20:.1f}",
-        "servo1_angle":  f"{90 + (random.random() - 0.5) * 20:.1f}",
-        "servo2_target": f"{90 + (random.random() - 0.5) * 20:.1f}",
-        "servo2_angle":  f"{90 + (random.random() - 0.5) * 20:.1f}",
-        "servo3_target": f"{90 + (random.random() - 0.5) * 20:.1f}",
-        "servo3_angle":  f"{90 + (random.random() - 0.5) * 20:.1f}",
-    }
-
-    # Build the line based on the config order
-    line_parts = []
-    for cfg in TELEMETRY_CONFIG:
-        key = cfg.get("internal_key")
-        dtype = cfg.get("type")
-        
-        if key in val_map:
-            line_parts.append(val_map[key])
-        else:
-            # Default fallback for missing keys
-            line_parts.append("0")
-
-    return ",".join(line_parts)
-
-async def dummy_data_sender():
-    """Generates and processes dummy data once per second."""
-    log_json(event="dummy_data_started")
-    while True:
-        line = generate_dummy_telemetry_line()
-        await handle_telemetry_line(line)
-        await asyncio.sleep(1)
 
 # ===================== FASTAPI APPLICATION SETUP =====================
 from contextlib import asynccontextmanager
@@ -1150,6 +1036,7 @@ async def lifespan(app: FastAPI):
     """
     # Startup logic
     log_json(event="startup", team=TEAM_ID, server_serial=USE_SERVER_SERIAL)
+    _select_serial_port_at_startup()
     ensure_csv_header()
 
     tasks = []
@@ -1180,8 +1067,6 @@ async def lifespan(app: FastAPI):
 
     # Cancel background async tasks and wait for them to finish cleanly.
     all_tasks = list(tasks)
-    if dummy_task and not dummy_task.done():
-        all_tasks.append(dummy_task)
     if sim_task and not sim_task.done():
         all_tasks.append(sim_task)
     for t in all_tasks:
@@ -1195,27 +1080,6 @@ async def lifespan(app: FastAPI):
         serial_thread.join(timeout=2)
 
 app = FastAPI(title="CanSat Ground Station (Python)", lifespan=lifespan)
-
-@app.post("/api/dummy/start")
-async def api_dummy_start():
-    """Starts generating fake data."""
-    global dummy_task
-    if dummy_task and not dummy_task.done():
-        return {"ok": False, "message": "Dummy task already running"}
-    dummy_state["packet"] = 0
-    dummy_state["has_landed"] = False
-    dummy_task = asyncio.create_task(dummy_data_sender())
-    return {"ok": True}
-
-@app.post("/api/dummy/stop")
-async def api_dummy_stop():
-    """Stops generating fake data."""
-    global dummy_task
-    if dummy_task and not dummy_task.done():
-        dummy_task.cancel()
-        log_json(event="dummy_data_stopped")
-        return {"ok": True}
-    return {"ok": False, "message": "Dummy task not running"}
 
 # ===================== API ENDPOINTS (Web Interface Connects Here) =====================
 
@@ -1236,7 +1100,10 @@ async def api_health():
 async def api_logs(n: int = 500):
     """Returns the last N log messages."""
     n = max(1, min(n, 5000))
-    return list(ring)[-n:]
+    # Slice the deque from the right without copying the entire buffer.
+    from itertools import islice
+    start = max(0, len(ring) - n)
+    return list(islice(ring, start, len(ring)))
 
 # ---- Serial config / ports ----
 @app.get("/api/serial/ports")
@@ -1284,17 +1151,23 @@ async def api_command(body: CommandBody):
     """
     Receives a command from the website (e.g., "CX,ON"),
     adds the Team ID prefix, and queues it to be sent.
-    # [REQ-63] Command CanSat to calibrate altitude to zero (CAL)
-    # [REQ-82] Set time by ground command (ST,GPS or ST,UTC)
-    # [REQ-86] Commands to activate all mechanisms (MEC,PL,ON etc.)
+    Reports last_cmd only after the queue accepts the request — does not
+    falsely advertise a send when the uplink queue is full.
     """
     global sim_task
     cmd_upper = body.cmd.strip().upper()
 
     # body.cmd is something like "CX,ON"
     uplink = f"CMD,{TEAM_ID:04},{body.cmd.strip()}"
+
+    # Non-blocking enqueue so a saturated uplink does not stall HTTP responses.
+    try:
+        uplink_q.put_nowait(uplink)
+    except asyncio.QueueFull:
+        log_json(level="warn", event="uplink_queue_full", cmd=uplink)
+        raise HTTPException(status_code=503, detail="Uplink queue full — retry shortly")
+
     state.last_cmd = uplink
-    await uplink_q.put(uplink)
 
     # Trigger simulation file streaming if SIM,ACTIVATE is sent manually
     if cmd_upper == "SIM,ENABLE":
@@ -1306,14 +1179,14 @@ async def api_command(body: CommandBody):
 
     if cmd_upper == "SIM,ACTIVATE":
         if state.sim_enabled:
-            if sim_task and not sim_task.done():
-                pass
-            else:
+            # Replace any old finished task — but if a streamer is already
+            # active, do not start a second one.
+            if not (sim_task and not sim_task.done()):
                 path = ROOT_DIR / "cansat_2023_simp.txt"
                 sim_task = asyncio.create_task(sim_file_streamer(path))
         else:
             log_json(level="warn", event="sim_activate_ignored", reason="sim_not_enabled")
-            
+
     return {"ok": True, "sent": uplink}
 
 # ---- Simulation start ----
@@ -1383,6 +1256,8 @@ async def api_log_set(body: LogBody):
         state.kml_points.clear()
         state.kml_max_alt = 0.0
         state.kml_landed_saved = False
+        global _kml_gps_count
+        _kml_gps_count = 0
 
         # Reset packet-loss and receive counters — fresh per-log statistics
         state.last_pkt   = None
@@ -1419,80 +1294,6 @@ async def api_gcs_log_event(body: GCSEventBody):
         kw["detail"] = body.detail
     log_json(**kw)
     return {"ok": True}
-
-# ---- CSV replay endpoint ----
-@app.get("/api/csv/replay")
-async def api_csv_replay(n: int = 2000):
-    """
-    Read the active CSV log and return parsed telemetry rows for frontend replay.
-    Called by the browser after a log switch so charts/map rebuild from saved data.
-    Returns up to the last `n` data rows (default 2000) to keep response fast.
-    """
-    path = get_active_csv()
-    if not path.exists():
-        return {"rows": [], "file": path.name, "total": 0}
-
-    try:
-        async with aiofiles.open(path, "r", encoding="utf-8") as f:
-            raw_lines = await f.readlines()
-    except Exception as e:
-        return JSONResponse({"rows": [], "error": str(e)}, status_code=500)
-
-    # Row 0 is the CSV header — skip it; limit to last n data rows
-    data_lines = [ln.rstrip("\r\n") for ln in raw_lines[1:] if ln.strip()]
-    total = len(data_lines)
-    data_lines = data_lines[-n:]
-
-    min_required = len([x for x in TELEMETRY_CONFIG if not x.get("optional", False)])
-    results: List[dict] = []
-    rx_seq    = 0
-    last_pkt_r: Optional[int] = None
-    loss_r    = 0
-
-    for raw in data_lines:
-        reader = csv.reader([raw], skipinitialspace=True)
-        try:
-            parts = next(reader)
-        except StopIteration:
-            continue
-        parts = [p.strip() for p in parts]
-        if len(parts) < min_required:
-            continue
-
-        parsed: dict = {}
-        for i, cfg in enumerate(TELEMETRY_CONFIG):
-            key   = cfg.get("internal_key")
-            dtype = cfg.get("type")
-            val   = (parts[i] if i < len(parts) else "").strip()
-            try:
-                if   dtype == "int":   value: object = int(val)   if val else 0
-                elif dtype == "float": value = float(val) if val else 0.0
-                else:                  value = val
-            except ValueError:
-                value = 0 if dtype == "int" else 0.0 if dtype == "float" else ""
-            if key:
-                parsed[key] = value
-
-        # Recalculate packet-loss from sequence numbers in the saved CSV
-        rx_seq += 1
-        pkt_r = int(parsed.get("packet_count") or 0)
-        if last_pkt_r is not None and pkt_r > 0 and pkt_r > last_pkt_r + 1:
-            loss_r += pkt_r - last_pkt_r - 1
-        if pkt_r > 0:
-            last_pkt_r = pkt_r
-
-        parsed["gs_ts_utc"]    = ""
-        parsed["gs_rx_count"]  = rx_seq
-        parsed["gs_loss_total"] = loss_r
-        parsed["gs_raw_line"]  = raw
-
-        try:
-            tel = Telemetry(**parsed)
-            results.append(tel.model_dump())
-        except Exception:
-            continue
-
-    return {"rows": results, "file": path.name, "total": total}
 
 # ---- KML download endpoint ----
 @app.post("/api/kml/save")
@@ -1534,10 +1335,19 @@ def _open_folder(path: Path):
     except Exception as e:
         return False, str(e)
 
+_LOCALHOST_HOSTS = {"127.0.0.1", "::1", "localhost"}
+
 @app.get("/api/csv/open-folder")
 @app.get("/api/csv/open")  # alias used by app.js
-async def api_csv_open_folder():
-    """API to open the data folder."""
+async def api_csv_open_folder(request: Request):
+    """Open the data folder — only allowed for local browsers since the folder
+    pops on the SERVER desktop, not the client's. Remote clients get 403."""
+    client_host = request.client.host if request.client else ""
+    if client_host not in _LOCALHOST_HOSTS:
+        return JSONResponse(
+            status_code=403,
+            content={"ok": False, "error": "Open Folder is only available when running the GCS locally.", "path": str(DATA_DIR)},
+        )
     if not DATA_DIR.exists():
         return JSONResponse(status_code=404, content={"ok": False, "error": "Folder not found", "path": str(DATA_DIR)})
     ok, err = _open_folder(DATA_DIR)

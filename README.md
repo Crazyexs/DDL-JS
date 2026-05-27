@@ -162,30 +162,12 @@ All commands are sent via the Quick Command dropdown or the manual input box in 
 | `SERVO,B,<0-180>` | Direct servo B angle |
 | `CAL,TOF,<mm>` | Calibrate VL53L1X ToF sensor (distance in mm) |
 | `CAL,MAG,RESET` | Reset magnetometer calibration |
-| `/dummy.on` / `/dummy.off` | Start / stop local dummy data (GCS only) |
 
 ---
 
 ## Raspberry Pi Setup
 
-This section covers deploying the GCS on a Raspberry Pi with the KMR-1.44 SPI V2 (ST7735) status display and full auto-start on boot.
-
-### Wiring the KMR-1.44 SPI V2 Screen
-
-Connect the screen to the Raspberry Pi GPIO header as follows:
-
-| Screen Pin | Raspberry Pi Pin | Description |
-|---|---|---|
-| VCC | Pin 2 or 4 (5V) | Power (use 5V for full brightness) |
-| GND | Pin 6 (GND) | Ground |
-| CS | Pin 24 (GPIO 8 / CE0) | SPI Chip Select |
-| RESET | Pin 22 (GPIO 25) | Reset |
-| A0 / DC | Pin 18 (GPIO 24) | Data / Command |
-| SDA | Pin 19 (GPIO 10 / MOSI) | SPI Data |
-| SCK | Pin 23 (GPIO 11 / SCLK) | SPI Clock |
-| LED | Pin 12 (GPIO 18) | Backlight (software-controlled) |
-
-If you connect LED directly to 3.3V instead of GPIO 18, open `oled/oled_daemon.py` and change `BACKLIGHT = 18` to `BACKLIGHT = None`.
+This section covers deploying the GCS on a Raspberry Pi with full auto-start on boot.
 
 ### Pi Installation — One Command
 
@@ -206,7 +188,6 @@ After the reboot:
 - The GCS server starts automatically in the background.
 - Firefox opens `http://localhost:8080` automatically on desktop login.
 - Your XBee radio is detected and connected automatically.
-- The ST7735 screen starts displaying Pi stats automatically.
 
 ### Managing the Service
 
@@ -237,7 +218,6 @@ Then open a browser on any device on the same Wi-Fi network and go to:
 The GCS saves every single byte received from the CanSat to a CSV file the moment it arrives, before any parsing or validation. This means no data is ever lost, even if a packet is malformed or incomplete.
 
 - **Main log file:** `data/Flight_1043.csv`
-- **Display control page:** `http://localhost:8080/display`
 
 The CSV file is created automatically when the server starts. Each row in the file is exactly the raw string received from the CanSat over the radio, in the order it was received.
 

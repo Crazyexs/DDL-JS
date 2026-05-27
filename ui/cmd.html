@@ -316,8 +316,8 @@
         <button class="btn blue"  onclick="send('STATE,ASCENT')">ASCENT</button>
         <button class="btn warn"  onclick="send('STATE,APOGEE')">APOGEE</button>
         <button class="btn warn"  onclick="send('STATE,DESCENT')">DESCENT</button>
-        <button class="btn warn"  onclick="send('STATE,PROBE_REALEASE')">PROBE REL.</button>
-        <button class="btn warn"  onclick="send('STATE,PAYLOAD_REALEASE')">PAYLOAD REL.</button>
+        <button class="btn warn"  onclick="send('STATE,PROBE_RELEASE')">PROBE REL.</button>
+        <button class="btn warn"  onclick="send('STATE,PAYLOAD_RELEASE')">PAYLOAD REL.</button>
         <button class="btn ghost" onclick="send('STATE,LANDED')">LANDED</button>
       </div>
     </div>
@@ -434,7 +434,7 @@
     <div class="card-body">
       <div class="man-row">
         <input id="manInput" type="text"
-          placeholder="e.g. CX,ON  ·  SIMP,101325  ·  /dummy.on"
+          placeholder="e.g. CX,ON  ·  SIMP,101325"
           autocomplete="off" autocapitalize="characters" spellcheck="false" />
         <button class="btn blue" onclick="sendManual()">Send</button>
       </div>
