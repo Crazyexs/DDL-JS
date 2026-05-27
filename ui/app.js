@@ -762,11 +762,20 @@ if (!window.__DGS_BOOTED__) {
         el.armState.textContent = t.arm_state || '—';
         el.armState.style.color = (t.arm_state === 'ARMED') ? 'var(--err)' : 'var(--ok)';
       }
-      // Deploy state
+      // Deploy state — driven by whichever sensor triggered deployment:
+      //   0 = stowed, 1 = ToF-triggered deploy, 2 = barometer-triggered deploy
       if (el.deployState) {
-        const deployed = t.deploy === '1' || t.deploy === 1 || t.deploy === true;
-        el.deployState.textContent = deployed ? 'DEPLOYED' : 'STOWED';
-        el.deployState.style.color = deployed ? 'var(--warn)' : 'var(--muted)';
+        const d = String(t.deploy ?? '').trim();
+        if (d === '2') {
+          el.deployState.textContent = 'DEPLOY (BARO)';
+          el.deployState.style.color = 'var(--err)';
+        } else if (d === '1') {
+          el.deployState.textContent = 'DEPLOY (ToF)';
+          el.deployState.style.color = 'var(--warn)';
+        } else {
+          el.deployState.textContent = 'STOWED';
+          el.deployState.style.color = 'var(--muted)';
+        }
       }
 
       // 3. Update Key Value Grid
