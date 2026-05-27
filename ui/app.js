@@ -65,7 +65,6 @@ if (!window.__DGS_BOOTED__) {
       lastNavSpeech: 0,
       arrivedSpoken: false,
       // Dummy data state
-      dummy: { id: null, packet: 0, lat: 18.788, lon: 98.985 },
       // Pinned GPS target (user-defined landing zone)
       pinnedLat: null,
       pinnedLon: null,
@@ -76,12 +75,14 @@ if (!window.__DGS_BOOTED__) {
       releaseAlt: null,
       releaseTime: null,    // satellite mission_time seconds when descent started
       // Resilience
-      isReplaying: false,       // suppress audio/logs during ring-buffer replay
       reconnectDelay: 2000,     // current backoff delay (ms); grows on repeated failures
       reconnectTimer: null,     // handle for the pending reconnect setTimeout
       lastChartTs: 0,           // timestamp of last chart push (for 5 Hz throttle)
       lastGsUiTs: 0,            // timestamp of last GS UI update (throttle)
       lastSpeedAlt: undefined,  // altitude at the previous speed sample
+      // Command verification — last sent command awaiting echo from the payload
+      lastSentCmd: null,
+      lastCmdVerified: false,
     };
 
     // ---------- CONSTANTS (outside hot path) ----------
@@ -187,9 +188,6 @@ if (!window.__DGS_BOOTED__) {
       armState:      $("#armState"),
       deployState:   $("#deployState"),
       rssiLabel:     $("#rssiLabel"),
-      val_vel_e:     $("#val_vel_e"),
-      val_vel_n:     $("#val_vel_n"),
-      val_tof:       $("#val_tof"),
       val_heading_gps: $("#val_heading_gps"),
     };
 
@@ -210,12 +208,18 @@ if (!window.__DGS_BOOTED__) {
     document.body.addEventListener('click', unlockAudio);
     document.body.addEventListener('touchstart', unlockAudio);
 
+    let _lastSpeechMs = 0;
     function speak(text) {
       if (!st.audioEnabled) return;
       if (!window.speechSynthesis) return;
 
       // Force unlock if not already (some browsers allow it if triggered by a button directly)
       if (!audioUnlocked) unlockAudio();
+
+      // Throttle: don't interrupt an in-progress utterance for repeats within 1.5s.
+      const _nowMs = Date.now();
+      if (window.speechSynthesis.speaking && _nowMs - _lastSpeechMs < 1500) return;
+      _lastSpeechMs = _nowMs;
 
       window.speechSynthesis.cancel(); // Cancel ongoing
       const u = new SpeechSynthesisUtterance(text);
@@ -345,12 +349,16 @@ if (!window.__DGS_BOOTED__) {
       const ss = pad(totalSec % 60);
       const duration = `${hh}:${mm}:${ss}`;
       st.t0 = null;
+      // Preserve final mission time on display — LANDED packets must NOT reset it.
+      // Frozen until the next launch (LANDED → LAUNCH_PAD transition).
+      st.lastMissionDuration = duration;
       if (el.btnStartMission) {
         el.btnStartMission.textContent      = 'Start Mission';
         el.btnStartMission.style.background = '';
         el.btnStartMission.style.color      = '';
       }
-      if (el.missionSmall) el.missionSmall.textContent = 'Mission: --:--:--';
+      if (el.missionSmall) el.missionSmall.textContent = `Mission: ${duration} (stopped)`;
+      if (el.missionBig) el.missionBig.textContent = duration;
       const msg = `Mission Timer Stopped${reason ? ' — ' + reason : ''} | Record Time: ${duration}`;
       info(msg);
       logGCSEvent('mission_timer_stop', `${reason || 'manual'} | record_time=${duration}`);
@@ -435,7 +443,7 @@ if (!window.__DGS_BOOTED__) {
     // ── 3D mode ── tiles served from SW cache when offline ──────────────
     function initCesium3D() {
       if (!el.mapEl) return;
-      Cesium.Ion.defaultAccessToken = '';
+      Cesium.Ion.defaultAccessToken = undefined;
 
       const viewer = new Cesium.Viewer('map', {
         baseLayerPicker:      false,
@@ -710,6 +718,10 @@ if (!window.__DGS_BOOTED__) {
     }
 
     function initCharts() {
+      // Dispose any existing instances so canvases / event listeners don't leak
+      // when initCharts is called more than once (e.g. on Reset UI or log switch).
+      Object.values(st.charts).forEach(c => { try { c?.dispose(); } catch (_) {} });
+      st.charts = {};
       // Altitude: Smooth + Area fill
       st.charts.altitude = makeMulti('chart-altitude', ['Altitude'], { smooth: true, area: true });
       // Power: Smooth
@@ -755,7 +767,7 @@ if (!window.__DGS_BOOTED__) {
 
       // Auto-start mission timer on first live telemetry packet.
       // Skip if state is already LANDED — mission is over, don't restart until a new flight begins.
-      if (!st.isReplaying && t.state !== 'LANDED') startMissionTimer('Auto — first packet received');
+      if (t.state !== 'LANDED') startMissionTimer('Auto — first packet received');
 
       // --- AUDIO & ALTITUDE TRACKING ---
       if (typeof t.altitude_m === 'number') {
@@ -763,12 +775,16 @@ if (!window.__DGS_BOOTED__) {
       }
 
       if (t.state && t.state.trim() !== '' && t.state !== st.lastSpokenState) {
-        if (st.lastSpokenState !== null && !st.isReplaying) {
+        if (st.lastSpokenState !== null) {
           if (t.state === 'LANDED') {
             speak(`Mission Successful. Highest altitude reached: ${Math.round(st.maxAlt)} meters.`);
             if (el.recoveryGroup) el.recoveryGroup.style.display = 'block';
             stopMissionTimer('Auto — payload landed');
             // KML is auto-saved server-side; backend broadcasts kml_saved when done
+          } else if (st.lastSpokenState === 'LANDED' && t.state === 'LAUNCH_PAD') {
+            // New flight: LANDED → LAUNCH_PAD restarts the mission timer fresh.
+            speak('New mission starting from launch pad.');
+            startMissionTimer('Auto — new flight from launch pad');
           } else {
             speak(`State changed to ${t.state}.`);
           }
@@ -866,13 +882,9 @@ if (!window.__DGS_BOOTED__) {
       el.val_accel_y && (el.val_accel_y.textContent = num(t.accel_p_dps2, 2));
       el.val_accel_z && (el.val_accel_z.textContent = num(t.accel_y_dps2, 2));
 
-      // Velocity, ToF, GPS heading (use cached el references)
-      el.val_vel_e     && (el.val_vel_e.textContent     = `${num(t.velocity_e, 2)} m/s`);
-      el.val_vel_n     && (el.val_vel_n.textContent     = `${num(t.velocity_n, 2)} m/s`);
-      el.val_tof       && (el.val_tof.textContent       = `${num(t.tof, 3)} m`);
+      // GPS heading
       el.val_heading_gps && (el.val_heading_gps.textContent = `${num(t.heading_gps, 1)}°`);
 
-      // Servo angles (use cached el references)
 
       // Calculate G Force and Speed
       const accel_mag = Math.sqrt(
@@ -918,23 +930,33 @@ if (!window.__DGS_BOOTED__) {
       if (t.gps_time && /^\d\d:\d\d:\d\d$/.test(t.gps_time)) st.lastGPSHMS = t.gps_time;
       if (typeof t.altitude_m === 'number') st.lastAlt = t.altitude_m;
 
-      // 6. Update Command Echo (what the satellite said it received)
+      // 6. Verify command echo — confirms payload received the last command
       if (t.cmd_echo) {
-        el.lastCmd && (el.lastCmd.textContent = t.cmd_echo);
+        const echo = String(t.cmd_echo).trim().toUpperCase();
+        if (el.lastCmd) {
+          if (st.lastSentCmd && (echo === st.lastSentCmd || echo.includes(st.lastSentCmd))) {
+            if (!st.lastCmdVerified) {
+              st.lastCmdVerified = true;
+              cmdEcho(`✓ VERIFIED: ${st.lastSentCmd}`);
+            }
+            el.lastCmd.textContent = `✓ ${st.lastSentCmd}`;
+            el.lastCmd.style.color = 'var(--ok)';
+          } else {
+            el.lastCmd.textContent = echo;
+            el.lastCmd.style.color = '';
+          }
+        }
       }
 
-      // 7. Update Charts
-      // [REQ-69] Plot altitude, battery voltage, current, accelerometer, rotation rates in real time
-      // During replay: push every packet to restore chart history.
-      // During live:   throttle to 5 Hz so ECharts stays fast at high TX rates (e.g. 10 Hz).
+      // 7. Update Charts — throttle to 5 Hz so ECharts stays fast at high TX rates.
       const _now = Date.now();
-      if (st.isReplaying || _now - st.lastChartTs >= 200) {
+      if (_now - st.lastChartTs >= 200) {
         const label = t.mission_time || hms();
         pushChart(st.charts.altitude, label, [t.altitude_m]);
         pushChart(st.charts.power, label, [t.voltage_v, t.current_a]);
         pushChart(st.charts.accel, label, [t.accel_r_dps2, t.accel_p_dps2, t.accel_y_dps2]);
         pushChart(st.charts.gyro, label, [t.gyro_r_dps, t.gyro_p_dps, t.gyro_y_dps]);
-        if (!st.isReplaying) st.lastChartTs = _now;
+        st.lastChartTs = _now;
       }
 
       // 8. Update 3D Cesium Map & KML Export
@@ -948,13 +970,12 @@ if (!window.__DGS_BOOTED__) {
 
         // Only plot coordinates when we have a solid GPS 3D fix (> 3 sats)
         if (Number(t.gps_sats) > 3) {
-          // Always update the position state \u2014 map will snap here when live data arrives
+          // Update position state \u2014 map will snap here when live data arrives
           st.gps_lat = lat;
           st.gps_lon = lon;
           st.lastCesiumAlt = alt;
 
-          // Skip expensive map rendering during replay; let live data handle it
-          if (!st.isReplaying) {
+          {
             if (st.cesiumViewer) {
               // 3D mode: marker floats at real GPS altitude
               const pos3d = Cesium.Cartesian3.fromDegrees(lon, lat, alt);
@@ -996,26 +1017,24 @@ if (!window.__DGS_BOOTED__) {
         }
       }
 
-      // 9. Update Text Log (bottom right box) \u2014 suppressed during replay to avoid flooding
-      if (!st.isReplaying) {
-        try {
-          const showRaw = el.showRaw?.checked;
-          let logText;
+      // 9. Update Text Log (bottom right box)
+      try {
+        const showRaw = el.showRaw?.checked;
+        let logText;
 
-          if (showRaw && t.gs_raw_line) {
-            logText = t.gs_raw_line;
-          } else {
-            logText = `#${t.packet_count} ${t.state} | ` +
-              `Alt:${num(t.altitude_m)}m | ` +
-              `Bat:${num(t.voltage_v, 2)}V | ` +
-              `T:${num(t.temperature_c, 1)}C | ` +
-              `P:${num(t.pressure_kpa, 1)}k | ` +
-              (t.cmd_echo ? `Echo:${t.cmd_echo}` : '');
-          }
-          log('info', logText);
-        } catch (e) {
-          console.error("Log error:", e);
+        if (showRaw && t.gs_raw_line) {
+          logText = t.gs_raw_line;
+        } else {
+          logText = `#${t.packet_count} ${t.state} | ` +
+            `Alt:${num(t.altitude_m)}m | ` +
+            `Bat:${num(t.voltage_v, 2)}V | ` +
+            `T:${num(t.temperature_c, 1)}C | ` +
+            `P:${num(t.pressure_kpa, 1)}k | ` +
+            (t.cmd_echo ? `Echo:${t.cmd_echo}` : '');
         }
+        log('info', logText);
+      } catch (e) {
+        console.error("Log error:", e);
       }
     }
 
@@ -1068,8 +1087,6 @@ if (!window.__DGS_BOOTED__) {
       'MEC,PAR,CW', 'MEC,PAR,ACW', 'MEC,PAR,OFF',
       // Log switching (local GCS only \u2014 not sent to satellite)
       '/log.clear',
-      // Dummy data
-      '/dummy.on', '/dummy.off',
     ];
 
     // Commands that require a numeric value typed after the prefix
@@ -1129,22 +1146,17 @@ if (!window.__DGS_BOOTED__) {
           return;
         }
 
-        if (command === '/dummy.on') {
-          fetch('/api/dummy/start', { method: 'POST' });
-          info('Requesting dummy data from server...');
-          return;
-        }
-        if (command === '/dummy.off') {
-          fetch('/api/dummy/stop', { method: 'POST' });
-          info('Stopping dummy data on server...');
-          return;
-        }
         err(`Unknown local command: ${cmd}`);
         return;
       }
 
-      // Update UI immediately to show we tried to send
-      // el.lastCmd.textContent = cmd;  <-- REMOVED per user request (wait for echo)
+      // Track this as the command awaiting echo verification.
+      st.lastSentCmd = cmd.toUpperCase();
+      st.lastCmdVerified = false;
+      if (el.lastCmd) {
+        el.lastCmd.textContent = `⏳ ${cmd.toUpperCase()}`;
+        el.lastCmd.style.color = 'var(--warn)';
+      }
       cmdEcho('> ' + cmd);
 
       try {
@@ -1157,9 +1169,13 @@ if (!window.__DGS_BOOTED__) {
           const errBody = await res.text();
           throw new Error(`HTTP ${res.status}: ${errBody}`);
         }
-        // If successful, we just wait. The satellite will echo the command back later if it got it.
+        // Sent OK — now wait for cmd_echo in incoming telemetry to mark VERIFIED.
       } catch (e) {
         err(`Command failed: ${e.message}`);
+        if (el.lastCmd) {
+          el.lastCmd.textContent = `✗ ${cmd.toUpperCase()}`;
+          el.lastCmd.style.color = 'var(--err)';
+        }
       }
     }
 
@@ -1178,7 +1194,11 @@ if (!window.__DGS_BOOTED__) {
       }
     });
     el.send?.addEventListener('click', () => { const v = (el.manual?.value || '').trim(); if (!v) return; sendCommand(v); if (el.manual) el.manual.value = ''; });
-    el.manual?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.send?.click(); } });
+    el.manual?.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      if ((el.manual.value || '').trim() !== '') el.send?.click();
+    });
 
 
     // ---------- DISPLAY RESET ----------
@@ -1229,89 +1249,6 @@ if (!window.__DGS_BOOTED__) {
       }
     }
 
-    // ---------- CSV REPLAY ----------
-    // Reads the active log's CSV via /api/csv/replay and replays every row
-    // through onTelemetry() \u2014 restores charts, GPS state, and all displays
-    // from the saved data of whichever log is now active.
-    async function replayFromCSV() {
-      try {
-        const res = await fetch('/api/csv/replay?n=2000');
-        if (!res.ok) return;
-        const { rows, file, total } = await res.json();
-
-        if (!rows || rows.length === 0) {
-          info('New log is empty \u2014 ready to record.');
-          return;
-        }
-
-        st.isReplaying = true;
-        for (const row of rows) {
-          onTelemetry(row);
-        }
-        st.isReplaying = false;
-
-        // After replay, snap the map to the final known GPS position
-        if (st.gps_lat !== null && st.gps_lon !== null) {
-          if (st.cesiumViewer) {
-            const pos = Cesium.Cartesian3.fromDegrees(st.gps_lon, st.gps_lat, st.lastCesiumAlt || 0);
-            if (st.cesiumMarker) st.cesiumMarker.position = new Cesium.ConstantPositionProperty(pos);
-            if (!st.cesiumHasFix) {
-              st.cesiumHasFix = true;
-              st.cesiumViewer.camera.flyTo({
-                destination: Cesium.Cartesian3.fromDegrees(st.gps_lon, st.gps_lat, 1500),
-                orientation: { heading: Cesium.Math.toRadians(0), pitch: Cesium.Math.toRadians(-30), roll: 0 },
-                duration: 1.0,
-              });
-            }
-          } else if (st.map && st.marker) {
-            st.marker.setLatLng([st.gps_lat, st.gps_lon]);
-            st.map.setView([st.gps_lat, st.gps_lon], st.map.getZoom());
-          }
-        }
-
-        const shown = rows.length;
-        const msg   = total > shown
-          ? `\u21a9 Restored ${shown} of ${total} packets from ${file} (showing last ${shown}).`
-          : `\u21a9 Restored ${shown} packets from ${file}.`;
-        info(msg);
-      } catch (e) {
-        st.isReplaying = false;
-        warn(`CSV replay failed: ${e.message}`);
-      }
-    }
-
-    // ---------- RING-BUFFER REPLAY ----------
-    // On WebSocket connect/reconnect: try the in-memory ring buffer first (fast,
-    // recent live packets). If the ring is empty (e.g. after a log switch + page
-    // refresh), fall back to the CSV so charts are never left blank.
-    async function replayMissedPackets() {
-      try {
-        const res = await fetch('/api/logs?n=300');
-        if (!res.ok) return;
-        const lines = await res.json();
-
-        st.isReplaying = true;
-        let replayed = 0;
-        for (const raw of lines) {
-          try {
-            const obj = JSON.parse(raw);
-            if (obj.telemetry) { onTelemetry(obj.telemetry); replayed++; }
-          } catch (_) {}
-        }
-        st.isReplaying = false;
-
-        if (replayed > 0) {
-          info(`\u21a9 Restored ${replayed} packets from server history.`);
-        } else {
-          // Ring was empty (log switch cleared it) \u2014 load from CSV instead
-          await replayFromCSV();
-        }
-      } catch (e) {
-        st.isReplaying = false;
-        warn(`History restore failed: ${e.message}`);
-      }
-    }
-
     // ---------- WEBSOCKET CONNECTION (Real-time link) ----------
     function connect() {
       // Don't open a second socket if one is already live or connecting
@@ -1326,10 +1263,6 @@ if (!window.__DGS_BOOTED__) {
         st.reconnectDelay = 2000; // reset backoff on success
         info('Backend connected.');
         setPill(true, 'Connected');
-        // On first page load initCharts() runs 200ms after connect (CSS layout pass).
-        // Wait 300ms before replaying so charts exist; on reconnect they already do.
-        const replayDelay = Object.keys(st.charts).length === 0 ? 300 : 0;
-        setTimeout(replayMissedPackets, replayDelay);
       };
 
       st.ws.onmessage = (ev) => {

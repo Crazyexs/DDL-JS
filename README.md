@@ -47,7 +47,7 @@ Edit `DEFAULT_PORT` at the top of `main.py` to match your XBee radio:
 | Linux / Pi | `/dev/ttyUSB0` |
 | Windows | `COM3` |
 
-If no radio is connected, click **Run Sim** in the UI to generate dummy telemetry.
+If no radio is connected, click **Run Sim** in the UI to stream the simulation pressure file.
 
 ---
 
@@ -58,11 +58,6 @@ This section provides a step-by-step walkthrough to turn a Raspberry Pi into a d
 ### Step 1: Hardware Preparation
 1. **Radio:** Plug in your XBee USB adapter.
 2. **GPS:** Plug in your Ground Station USB GPS (e.g. VK-172 u-blox 7).
-3. **Display (Optional):** If using the KMR-1.44 SPI V2 display, connect the pins to your Pi's GPIO header. You **must** enable SPI communication on the Pi:
-   ```bash
-   sudo raspi-config
-   ```
-   Navigate to **Interface Options -> SPI** and select **Yes** to enable it.
 
 ### Step 2: Download the Ground Station
 Open a terminal on the Raspberry Pi and clone this repository, making sure to switch to the `raspberry-pi` branch:
@@ -156,7 +151,6 @@ DDL-JS/
 ├── scripts/
 │   ├── setup-pi.sh          # Raspberry Pi one-command installer
 │   └── start-kiosk.sh       # Kiosk browser launcher (called by autostart)
-├── oled/                    # Drivers for KMR-1.44 SPI display
 └── ui/
     ├── index.html           # Main dashboard
     ├── cmd.html             # Standalone command panel (/cmd)
@@ -190,4 +184,3 @@ All commands are sent via the Quick Command dropdown or the manual input box.
 | `SERVO,B,<0-180>` | Direct servo B angle |
 | `CAL,TOF,<mm>` | Calibrate VL53L1X ToF sensor (distance in mm) |
 | `CAL,MAG,RESET` | Reset magnetometer calibration |
-| `/dummy.on` / `/dummy.off` | Start / stop local dummy data (GCS only) |

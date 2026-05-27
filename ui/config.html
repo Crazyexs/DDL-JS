@@ -300,12 +300,12 @@
 
   <script>
     // ── Theme ──────────────────────────────────────────────────
-    const saved = localStorage.getItem('theme') || 'dark';
+    const saved = localStorage.getItem('dgs-theme') || 'dark';
     document.documentElement.setAttribute('data-theme', saved);
     function toggleTheme() {
       const t = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', t);
-      localStorage.setItem('theme', t);
+      localStorage.setItem('dgs-theme', t);
     }
 
     // ── State ─────────────────────────────────────────────────
