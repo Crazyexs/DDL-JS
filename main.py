@@ -734,7 +734,10 @@ def serial_read_thread_target(loop):
                 # Short read timeout bounds uplink latency: the loop returns from
                 # read() promptly to drain the TX queue. Safe at 115200 — a single
                 # API frame arrives contiguously and won't truncate within 0.2s.
-                ser = serial.Serial(state.cfg.port, state.cfg.baud, timeout=0.2)
+                # exclusive=True takes a POSIX TIOCEXCL lock so no other thread or
+                # process (e.g. the GPS thread, or a stray CoolTerm) can open the
+                # radio's fd — a hard guarantee against "multiple access on port".
+                ser = serial.Serial(state.cfg.port, state.cfg.baud, timeout=0.2, exclusive=True)
 
                 # Safely save the connection object
                 with _serial_lock:
@@ -825,12 +828,23 @@ def gps_reader_thread_target(loop):
     log_json(event="gps_thread_start", port=GPS_PORT)
     while not _gps_stop.is_set():
         try:
-            port = GPS_PORT
-            if not Path(port).exists():
-                for alt in ["/dev/ttyUSB0", "/dev/ttyACM1", "/dev/ttyUSB1"]:
-                    if Path(alt).exists():
-                        port = alt
-                        break
+            # The VK-172 GPS is a u-blox CDC-ACM device, so it is ALWAYS a
+            # /dev/ttyACM*. We must NEVER fall back to a /dev/ttyUSB* (that is the
+            # XBee radio): opening the radio's fd from this thread would trip
+            # pyserial's "multiple access on port" error and restart the
+            # reconnect-on-uplink storm. We also explicitly skip the configured
+            # XBee port in case the radio is ever mapped onto a ttyACM.
+            xbee_port = state.cfg.port
+            candidates = [GPS_PORT, "/dev/ttyACM1", "/dev/ttyACM2"]
+            port = next(
+                (c for c in candidates if c != xbee_port and Path(c).exists()),
+                None,
+            )
+            if port is None:
+                log_json(level="warn", event="gps_port_not_found",
+                         tried=candidates, xbee=xbee_port)
+                time.sleep(5)
+                continue
             ser = serial.Serial(port, GPS_BAUD, timeout=1)
             log_json(event="gps_connected", port=port)
             last_valid_fix_time = time.time()
