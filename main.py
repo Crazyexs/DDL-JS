@@ -640,11 +640,60 @@ def _build_api2_tx_frame(payload: bytes) -> bytes:
 # ===================== SERIAL COMMUNICATION (Talking to Hardware) =====================
 import threading
 import time
+import queue
 
 # These variables help share the serial connection safely between different parts of the program.
 _serial_port: Optional[serial.Serial] = None
 _serial_lock = threading.Lock()
 _stop_event = threading.Event()
+
+# --- Single-threaded serial I/O ----------------------------------------------
+# CRITICAL: ALL reads AND writes to _serial_port must happen ONLY inside
+# serial_read_thread_target(). Reading and writing the same tty fd from two
+# different threads makes pyserial's read() raise
+#   SerialException: device reports readiness to read but returned no data
+#                    (device disconnected or multiple access on port?)
+# on Linux (e.g. Raspberry Pi). The read loop treats that as a lost link and
+# reconnects — the spurious "auto reconnect on every uplink" bug. macOS tolerates
+# the race, which is why it only surfaces on Linux. So other threads hand outgoing
+# frames to _tx_queue and the reader drains it.
+_tx_queue: "queue.Queue[bytes]" = queue.Queue(maxsize=200)  # outgoing API frames
+_serial_connected = threading.Event()   # set while the port is open & usable
+_reconnect_request = threading.Event()  # set by HTTP handlers to ask for a clean reconnect
+
+
+def _close_serial():
+    """Close and clear the shared port. Called ONLY from the reader thread."""
+    global _serial_port
+    _serial_connected.clear()
+    with _serial_lock:
+        if _serial_port:
+            try:
+                _serial_port.close()
+            except Exception:
+                pass
+            _serial_port = None
+    # Drop any unsent uplinks so they aren't fired late after a reconnect.
+    try:
+        while True:
+            _tx_queue.get_nowait()
+    except queue.Empty:
+        pass
+
+
+def _drain_tx_queue(ser: serial.Serial):
+    """
+    Write every queued uplink frame to the radio. Runs in the reader thread so it
+    never races _read_api2_frame(). A write failure propagates to the caller, which
+    treats it as a genuine disconnect and reconnects.
+    """
+    while True:
+        try:
+            data = _tx_queue.get_nowait()
+        except queue.Empty:
+            return
+        ser.write(data)
+        ser.flush()
 
 def serial_read_thread_target(loop):
     """
@@ -671,11 +720,17 @@ def serial_read_thread_target(loop):
                     continue
 
                 log_json(event="serial_connecting", port=state.cfg.port, baud=state.cfg.baud)
-                ser = serial.Serial(state.cfg.port, state.cfg.baud, timeout=1)
-                
+                # Short read timeout bounds uplink latency: the loop returns from
+                # read() promptly to drain the TX queue. Safe at 115200 — a single
+                # API frame arrives contiguously and won't truncate within 0.2s.
+                ser = serial.Serial(state.cfg.port, state.cfg.baud, timeout=0.2)
+
                 # Safely save the connection object
                 with _serial_lock:
                     _serial_port = ser
+                _serial_connected.set()
+                # We just opened with the current cfg, so any pending request is satisfied.
+                _reconnect_request.clear()
                 log_json(event="serial_connected", port=state.cfg.port)
                 _thread_broadcast({"type": "serial_status", "connected": True, "port": state.cfg.port}, loop)
             except SerialException as e:
@@ -690,9 +745,22 @@ def serial_read_thread_target(loop):
                 time.sleep(2)
                 continue
 
-        # 2. Read Loop (Listen for data)
+        # 2. Read + Write Loop — ALL serial I/O happens in THIS thread only, so a
+        #    uplink write can never race the blocking read below (which on Linux
+        #    would raise "multiple access on port" and force a spurious reconnect).
         try:
+            # Honor a clean-reconnect request from an HTTP handler (e.g. config change).
+            if _reconnect_request.is_set():
+                _reconnect_request.clear()
+                log_json(event="serial_reconnect_request", port=state.cfg.port)
+                _close_serial()
+                _thread_broadcast({"type": "serial_status", "connected": False, "port": state.cfg.port}, loop)
+                continue
+
             if _serial_port and _serial_port.is_open:
+                # Flush any queued uplink frames first (single-threaded write).
+                _drain_tx_queue(_serial_port)
+
                 frame = _read_api2_frame(_serial_port)
                 if frame is None:
                     pass  # timeout or bad checksum — port is still fine
@@ -708,12 +776,11 @@ def serial_read_thread_target(loop):
                     except Exception:
                         pass
                     # Query RSSI of this packet from the local GCS XBee immediately.
-                    # ATDB is a local command — write directly, not through the RF uplink queue.
+                    # ATDB is a LOCAL command — write it here in the same (and only)
+                    # I/O thread so it can never race the read above.
                     try:
-                        with _serial_lock:
-                            if _serial_port and _serial_port.is_open:
-                                _serial_port.write(_build_db_query())
-                                _serial_port.flush()
+                        _serial_port.write(_build_db_query())
+                        _serial_port.flush()
                     except Exception:
                         pass
 
@@ -721,62 +788,54 @@ def serial_read_thread_target(loop):
                     state.rssi_dbm = frame["dbm"]
                     _thread_broadcast({"type": "rssi", "dbm": frame["dbm"]}, loop)
             else:
-                # If connection is lost, clean up
-                with _serial_lock:
-                    _serial_port = None
+                # Port object missing or closed — clean up and reconnect.
+                _close_serial()
                 _thread_broadcast({"type": "serial_status", "connected": False, "port": state.cfg.port}, loop)
                 time.sleep(1)
 
         except Exception as e:
-            # If any error happens during reading, log it and try to reconnect
+            # A genuine read/write failure (real disconnect). Close and reconnect.
             log_json(level="error", event="serial_read_error", error=str(e))
-            with _serial_lock:
-                if _serial_port:
-                    try:
-                        _serial_port.close()
-                    except Exception:
-                        pass
-                    _serial_port = None
+            _close_serial()
             _thread_broadcast({"type": "serial_status", "connected": False, "port": state.cfg.port}, loop)
             time.sleep(1)
 
     # Cleanup when the program stops
-    with _serial_lock:
-        if _serial_port:
-            _serial_port.close()
+    _close_serial()
     log_json(event="serial_thread_stop")
 
 async def serial_writer_worker():
     """
-    This function runs constantly in the background.
-    Its job is to wait for commands in the queue and send them to the radio.
+    Waits for commands in the queue and hands them to the reader thread to send.
+
+    It must NOT write to the serial port directly: that would put a write on a
+    different thread from the blocking read, which trips pyserial's "multiple
+    access on port" error on Linux and causes a reconnect on every uplink. Instead
+    it builds the API frame and pushes the bytes onto _tx_queue, which the single
+    serial I/O thread drains between reads.
     """
     while True:
         # Wait for a command to appear in the queue
         cmd = await uplink_q.get()
         try:
-            # Wrap the command in an API Mode 2 Transmit Request frame (0x10).
-            data = _build_api2_tx_frame((cmd + "\r\n").encode())
-
-            # Run the blocking lock+write in a thread-pool executor so the event
-            # loop is never stalled waiting for the threading.Lock.
-            def _do_write():
-                with _serial_lock:
-                    if _serial_port and _serial_port.is_open:
-                        _serial_port.write(data)
-                        _serial_port.flush()
-                        return True
-                return False
-
-            wrote = await asyncio.to_thread(_do_write)
-            
-            if wrote:
-                log_json(subsystem="uplink", sent=cmd)
-                ring.append(json.dumps({"uplink": cmd}))
-            else:
-                # If not connected, warn the user
+            # Fast-fail with clear feedback if the radio isn't connected.
+            if not _serial_connected.is_set():
                 log_json(level="warn", event="uplink_dropped_no_serial", cmd=cmd)
-                await broadcast_ws({"type": "error", "message": f"UPLINK FAILED: Serial not connected."})
+                await broadcast_ws({"type": "error", "message": "UPLINK FAILED: Serial not connected."})
+                continue
+
+            # Wrap the command in an API Mode 2 Transmit Request frame (0x10) and
+            # hand it to the reader thread for the actual write.
+            data = _build_api2_tx_frame((cmd + "\r\n").encode())
+            try:
+                _tx_queue.put_nowait(data)
+            except queue.Full:
+                log_json(level="warn", event="uplink_dropped_tx_full", cmd=cmd)
+                await broadcast_ws({"type": "error", "message": "UPLINK FAILED: TX buffer full."})
+                continue
+
+            log_json(subsystem="uplink", sent=cmd)
+            ring.append(json.dumps({"uplink": cmd}))
 
         except Exception as e:
             log_json(level="error", event="uplink_error", error=str(e), cmd=cmd)
@@ -1132,17 +1191,10 @@ async def api_serial_set(cfg: SerialCfg):
     state.cfg = cfg
     log_json(event="cfg_changed", port=cfg.port, baud=cfg.baud)
     
-    # Force reconnect by closing current port without blocking the event loop.
-    def _do_close():
-        with _serial_lock:
-            global _serial_port
-            if _serial_port and _serial_port.is_open:
-                try:
-                    _serial_port.close()
-                except Exception:
-                    pass
-                _serial_port = None
-    await asyncio.to_thread(_do_close)
+    # Ask the reader thread to reconnect in-thread. Closing the fd from this
+    # threadpool thread while the reader is blocked in read() would itself trip
+    # the "multiple access on port" error, so we never touch the port here.
+    _reconnect_request.set()
     return {"ok": True}
 
 # ---- Command uplink ----
