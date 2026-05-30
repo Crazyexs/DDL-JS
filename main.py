@@ -31,9 +31,11 @@ from datetime import datetime, timezone
 TEAM_ID = 1043
 
 # This is the default USB port the computer uses to talk to the radio.
-# On Windows it is usually "COM3", "COM4", etc.
-# On Linux/Mac it looks like "/dev/ttyUSB0".
-DEFAULT_PORT = "/dev/cu.usbserial-00000000"
+# On the Raspberry Pi we install a udev rule (scripts/setup-pi.sh) that gives the
+# XBee adapter the STABLE name /dev/xbee0 — so it never matters whether the kernel
+# enumerated it as ttyUSB0 or ttyUSB1, and the GPS (a ttyACM device) can never be
+# confused for it. The same udev rule tells ModemManager to ignore the radio.
+DEFAULT_PORT = "/dev/xbee0"
 
 # This is the speed of the connection. Both the radio and computer must match this number.
 DEFAULT_BAUD = 115200
@@ -219,8 +221,29 @@ state = GSState()
 
 # ===================== STARTUP SERIAL PORT SELECTION =====================
 def _select_serial_port_at_startup():
-    """Interactive port picker shown once at import time when stdin is a real terminal."""
+    """Pick the radio port at startup.
+
+    Order of preference:
+      1. The stable /dev/xbee0 udev symlink (installed by scripts/setup-pi.sh) —
+         used automatically so a headless/systemd boot connects with no UI step.
+      2. Headless with no symlink: the first /dev/ttyUSB* (the XBee is always a
+         ttyUSB; the GPS is a ttyACM, so this can never grab the GPS).
+      3. Interactive TTY: show the picker below.
+    """
+    # 1. Stable symlink wins, headless or not.
+    if Path("/dev/xbee0").exists():
+        state.cfg.port = "/dev/xbee0"
+        log_json(event="auto_port_selected", port="/dev/xbee0", reason="udev_symlink")
+        if not sys.stdin.isatty():
+            return
+
     if not sys.stdin.isatty():
+        # 2. Headless fallback — first ttyUSB only (never a ttyACM / the GPS).
+        usb = sorted(p.device for p in serial.tools.list_ports.comports()
+                     if "ttyUSB" in p.device)
+        if usb:
+            state.cfg.port = usb[0]
+            log_json(event="auto_port_selected", port=usb[0], reason="headless_ttyusb")
         return
     ports = sorted(serial.tools.list_ports.comports(), key=lambda p: p.device)
     print("\n" + "=" * 54)
@@ -722,9 +745,11 @@ def serial_read_thread_target(loop):
         # 1. Try to Connect
         if _serial_port is None:
             try:
-                # Check if the selected port actually exists
+                # Check if the selected port actually exists. Accept either a port
+                # reported by pyserial OR any existing device node — comports() does
+                # NOT list udev symlinks like /dev/xbee0, but Path.exists() does.
                 available_ports = [p.device for p in serial.tools.list_ports.comports()]
-                if state.cfg.port not in available_ports:
+                if state.cfg.port not in available_ports and not Path(state.cfg.port).exists():
                     # If not found, log an error and wait 5 seconds before trying again
                     log_json(level="error", event="port_not_found", port=state.cfg.port, available=available_ports)
                     time.sleep(5)

@@ -121,6 +121,22 @@ UDEV
 udevadm control --reload-rules
 echo "    GPS udev rules installed."
 
+# ─── XBee radio: stable name + keep other software off the port ──────
+# The XBee USB adapter enumerates as a /dev/ttyUSB* (the GPS is a ttyACM, so the
+# two never clash). We give the radio the STABLE symlink /dev/xbee0 and, crucially,
+# set ID_MM_DEVICE_IGNORE so ModemManager never probes/opens it at boot — the
+# ModemManager probe is the classic cause of "the radio only works after I unplug
+# and replug it". ENV{ID_MM_DEVICE_IGNORE} also covers any plug-in after boot.
+#
+# NOTE: this matches ANY ttyUSB. If you ever attach a second ttyUSB device, narrow
+# this rule with the XBee adapter's own IDs (find them with: udevadm info -a -n /dev/ttyUSB0 | grep -m2 idVendor).
+cat > /etc/udev/rules.d/99-xbee-radio.rules << 'UDEV'
+SUBSYSTEM=="tty", KERNEL=="ttyUSB*", SYMLINK+="xbee0", GROUP="dialout", MODE="0666", ENV{ID_MM_DEVICE_IGNORE}="1"
+UDEV
+udevadm control --reload-rules
+udevadm trigger --subsystem-match=tty 2>/dev/null || true
+echo "    XBee udev rules installed (/dev/xbee0, ModemManager ignored)."
+
 # ─── 6. Management tool ───────────────────────────────────────────
 echo ""
 echo ">>> [6/6] Installing 'gcs' management tool..."
