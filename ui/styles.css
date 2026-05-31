@@ -724,6 +724,25 @@ a { color: var(--accent); text-decoration: none; }
 .sun-boost .gpsmini,
 .sun-boost .tiny { font-weight: 700; letter-spacing: .02em; }
 
+/* Sun mode: raise the small labels/readouts to a 14px floor and bold them so
+   they stay legible in direct glare (G14). Scoped to .sun-boost so the normal
+   compact layout is unchanged when the mode is off. */
+.sun-boost .tiny,
+.sun-boost .sub,
+.sun-boost .label,
+.sun-boost .gpsmini,
+.sun-boost .gmaplink,
+.sun-boost .charttitle,
+.sun-boost .kv-major .k,
+.sun-boost .kv-cell .k,
+.sun-boost .kv-group .k,
+.sun-boost .lastcmd .tit { font-size: 14px; font-weight: 700; }
+.sun-boost .kv .v,
+.sun-boost .kv .v.big { font-size: 16px; font-weight: 800; }
+.sun-boost .logline,
+.sun-boost #rawBox { font-size: 14px; font-weight: 600; }
+.sun-boost .btn.sm { font-size: 14px; }
+
 /* ── RECOVERY OVERLAY ─────────────────────────────────────── */
 /* The overlay is full-screen and handled inline; only override inner styles */
 
