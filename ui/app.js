@@ -97,6 +97,7 @@ if (!window.__DGS_BOOTED__) {
     const el = {
       // Audio & Theme buttons
       toggleTheme: $("#toggleTheme"),
+      toggleSun: $("#toggleSun"),
       toggleAudio: $("#toggleAudio"),
       // Clocks
       utcClock: $("#utcClock"),
@@ -726,10 +727,12 @@ if (!window.__DGS_BOOTED__) {
       st.charts.altitude = makeMulti('chart-altitude', ['Altitude'], { smooth: true, area: true });
       // Power: Smooth
       st.charts.power = makeMulti('chart-power', ['Voltage', 'Current'], { smooth: true });
-      // Accel: Stacked
-      st.charts.accel = makeMulti('chart-accel', ['Acc X', 'Acc Y', 'Acc Z'], { stack: 'Total' });
-      // Gyro: Stacked
-      st.charts.gyro = makeMulti('chart-gyro', ['Gyr X', 'Gyr Y', 'Gyr Z'], { stack: 'Total' });
+      // Accel / Gyro: NOT stacked. G7 requires plotting the actual accelerometer
+      // values and rotation rates per axis. Stacking (stack:'Total') makes ECharts
+      // draw each series as a cumulative sum (Z line = X+Y+Z), so the plotted lines
+      // would not show the real per-axis readings. Plot each axis independently.
+      st.charts.accel = makeMulti('chart-accel', ['Acc X', 'Acc Y', 'Acc Z'], {});
+      st.charts.gyro = makeMulti('chart-gyro', ['Gyr X', 'Gyr Y', 'Gyr Z'], {});
     }
 
 
@@ -942,8 +945,15 @@ if (!window.__DGS_BOOTED__) {
       // 6. Verify command echo — confirms payload received the last command
       if (t.cmd_echo) {
         const echo = String(t.cmd_echo).trim().toUpperCase();
+        // The payload echoes commands with separators stripped: we send "MEC,PL,ON"
+        // but the CMD_ECHO field comes back as "MECPLON". Comparing the raw strings
+        // (with commas) could never match, so ✓ VERIFIED never fired and the badge
+        // stayed stuck on ⏳. Compare on an alphanumeric-only normal form instead.
+        const norm = (s) => String(s).toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const echoN = norm(echo);
+        const sentN = norm(st.lastSentCmd || '');
         if (el.lastCmd) {
-          if (st.lastSentCmd && (echo === st.lastSentCmd || echo.includes(st.lastSentCmd))) {
+          if (sentN && (echoN === sentN || echoN.includes(sentN))) {
             if (!st.lastCmdVerified) {
               st.lastCmdVerified = true;
               cmdEcho(`✓ VERIFIED: ${st.lastSentCmd}`);
@@ -1481,9 +1491,10 @@ if (!window.__DGS_BOOTED__) {
     function initTheme() {
       const root = document.documentElement;
       const saved = localStorage.getItem('dgs-theme');
-      if (saved === 'light' || saved === 'dark') {
-        root.setAttribute('data-theme', saved);
-      }
+      // G14: the field display must default to a DARK-TEXT-ON-LIGHT-BACKGROUND
+      // theme for bright-sunlight readability. The bare :root falls back to the
+      // dark theme, so when no preference is saved we explicitly select 'light'.
+      root.setAttribute('data-theme', saved === 'dark' ? 'dark' : 'light');
 
       el.toggleTheme?.addEventListener('click', () => {
         const cur = root.getAttribute('data-theme') || 'light';
@@ -1491,6 +1502,26 @@ if (!window.__DGS_BOOTED__) {
         root.setAttribute('data-theme', next);
         localStorage.setItem('dgs-theme', next);
         updateChartColors();
+      });
+    }
+
+    // ---------- SUN MODE (G14: bright-sunlight readability) ----------
+    // Toggles the .sun-boost class on <html> — larger base font + bolder, darker
+    // text for outdoor glare. Defaults ON (the GCS operates on the flight line in
+    // direct sun); the operator can turn it off indoors. Choice is persisted.
+    function applySunMode(on) {
+      document.documentElement.classList.toggle('sun-boost', on);
+      if (el.toggleSun) el.toggleSun.textContent = on ? 'Sun: ON' : 'Sun: OFF';
+      // ECharts measures the container in px, so re-layout after the font change.
+      Object.values(st.charts).forEach(c => { try { c?.resize(); } catch (_) {} });
+    }
+    function initSun() {
+      const on = localStorage.getItem('dgs-sun') !== 'off';   // default ON
+      applySunMode(on);
+      el.toggleSun?.addEventListener('click', () => {
+        const next = !document.documentElement.classList.contains('sun-boost');
+        localStorage.setItem('dgs-sun', next ? 'on' : 'off');
+        applySunMode(next);
       });
     }
 
@@ -1590,6 +1621,7 @@ if (!window.__DGS_BOOTED__) {
       initMap();
       fillCmds();
       initTheme();
+      initSun();
       syncLogLabel();
       initSerialSelector();
 
