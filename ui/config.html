@@ -223,6 +223,65 @@
       padding: 0.3rem 0.6rem;
       border-radius: 4px;
     }
+
+    /* ── Quick Select presets ───────────────────────────────── */
+    .preset-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+    }
+
+    .preset-btn {
+      background: var(--control-bg);
+      border: 1px solid var(--edge);
+      border-radius: 8px;
+      color: var(--fg);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.25rem;
+      padding: 0.85rem 1rem;
+      text-align: left;
+      transition: border-color 0.15s, background 0.15s;
+      font-family: 'Courier New', monospace;
+    }
+    .preset-btn:hover { border-color: var(--accent); }
+    .preset-btn:active { transform: scale(0.98); }
+
+    .preset-btn .pb-slot {
+      font-size: 1.4rem;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--accent);
+    }
+    .preset-btn .pb-name {
+      font-size: 0.82rem;
+      color: var(--fg);
+      letter-spacing: 0.04em;
+    }
+    .preset-btn .pb-addr {
+      font-size: 0.72rem;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+    }
+
+    .preset-btn.active {
+      border-color: var(--accent);
+      background: var(--chip-bg);
+      box-shadow: inset 0 0 0 1px var(--accent);
+    }
+    .preset-btn.active .pb-name { color: var(--accent); font-weight: 700; }
+
+    /* Pending = filled into the form, awaiting Apply confirmation */
+    .preset-btn.pending {
+      border-color: var(--accent);
+      border-style: dashed;
+    }
+    .preset-btn.pending .pb-name { color: var(--accent); }
+
+    .preset-btn.btn-custom { align-items: center; justify-content: center; }
+    .preset-btn.btn-custom .pb-slot { font-size: 1.1rem; }
   </style>
 </head>
 <body>
@@ -259,8 +318,21 @@
     </div>
   </div>
 
-  <!-- Edit form -->
+  <!-- Quick Select presets -->
   <div class="card">
+    <div class="card-title">Quick Select — Preset XBee Units</div>
+    <div class="preset-grid" id="preset-grid">
+      <!-- Buttons 1-3 + Custom injected by JS from /api/xbee/config -->
+    </div>
+    <div class="hint" style="margin-top:0.8rem;">
+      Press 1 · 2 · 3 to load a saved unit, then press <b>Apply</b> to confirm.
+      Presets are defined in <code>main.py</code> (<code>XBEE_PRESETS</code>).
+      Use <b>Custom</b> for a new XBee.
+    </div>
+  </div>
+
+  <!-- Edit form (Custom / manual entry) -->
+  <div class="card" id="custom-card" style="display:none;">
     <div class="card-title">Update Address</div>
 
     <!-- DL field (primary) -->
@@ -294,8 +366,11 @@
       <button class="btn-reset" onclick="resetForm()">Reset</button>
       <button class="btn-primary" id="btn-apply" onclick="applyConfig()">Apply</button>
     </div>
+  </div>
 
-    <div class="status-bar idle" id="status">Ready</div>
+  <!-- Status bar (always visible — reports preset + manual applies) -->
+  <div class="card" style="padding:0.75rem 1rem;">
+    <div class="status-bar idle" id="status" style="margin-top:0;">Ready</div>
   </div>
 
   <script>
@@ -312,6 +387,7 @@
     let currentDh = '0013A200';
     let currentDl = '41F77466';
     let defaultDh = '0013A200';
+    let presets   = [];   // [{slot, name, dh, dl}] from main.py XBEE_PRESETS
 
     // ── Init: load current config from server ─────────────────
     async function loadConfig() {
@@ -322,13 +398,104 @@
         currentDh  = data.dh;
         currentDl  = data.dl;
         defaultDh  = data.default_dh;
+        presets    = data.presets || [];
         updateDisplay(currentDh, currentDl);
         document.getElementById('input-dl').value = currentDl;
         document.getElementById('input-dh').value = currentDh;
         document.getElementById('info-default-dh').textContent = defaultDh;
+        renderPresets();
+        highlightActive();
       } catch (e) {
         setStatus('err', 'Failed to load config: ' + e.message);
       }
+    }
+
+    // ── Render Quick Select buttons (1-3 + Custom) ────────────
+    function renderPresets() {
+      const grid = document.getElementById('preset-grid');
+      grid.innerHTML = '';
+
+      presets.forEach(p => {
+        const dh = (p.dh || defaultDh).toUpperCase();
+        const dl = (p.dl || '').toUpperCase();
+        const btn = document.createElement('button');
+        btn.className = 'preset-btn';
+        btn.dataset.dh = dh;
+        btn.dataset.dl = dl;
+        btn.innerHTML =
+          `<span class="pb-slot">${p.slot}</span>` +
+          `<span class="pb-name">${p.name || ('Unit ' + p.slot)}</span>` +
+          `<span class="pb-addr">${dh} ${dl}</span>`;
+        btn.onclick = () => selectPreset(dh, dl);
+        grid.appendChild(btn);
+      });
+
+      // Custom button — reveals the manual entry form for a new XBee.
+      const custom = document.createElement('button');
+      custom.className = 'preset-btn btn-custom';
+      custom.innerHTML =
+        `<span class="pb-slot">✎</span>` +
+        `<span class="pb-name">Custom</span>` +
+        `<span class="pb-addr">enter address manually</span>`;
+      custom.onclick = openCustom;
+      grid.appendChild(custom);
+    }
+
+    // ── Load a preset into the form (fill, then confirm) ──────
+    // Pressing 1/2/3 fills the manual fields and reveals them; the user
+    // reviews and presses Apply to actually change the live address.
+    function selectPreset(dh, dl) {
+      dh = dh.toUpperCase();
+      dl = dl.toUpperCase();
+
+      const card = document.getElementById('custom-card');
+      card.style.display = '';
+
+      // DL is the primary field.
+      const dlInput = document.getElementById('input-dl');
+      dlInput.value = dl;
+      validateInput(dlInput);
+
+      // DH: only unlock the override field if the preset differs from default.
+      const dhToggle = document.getElementById('toggle-dh');
+      const dhInput  = document.getElementById('input-dh');
+      if (dh !== defaultDh.toUpperCase()) {
+        dhToggle.checked = true;
+        toggleDhField();
+        dhInput.value = dh;
+        validateInput(dhInput);
+      } else {
+        dhToggle.checked = false;
+        toggleDhField();   // resets DH field back to default
+      }
+
+      // Mark this preset as pending (awaiting Apply).
+      document.querySelectorAll('.preset-btn').forEach(b => {
+        b.classList.remove('pending');
+        if (b.dataset.dh === dh && b.dataset.dl === dl) b.classList.add('pending');
+      });
+
+      setStatus('loading', `Preset loaded → ${dh} ${dl} · press Apply to confirm`);
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // ── Highlight whichever preset matches the live address ───
+    function highlightActive() {
+      document.querySelectorAll('.preset-btn').forEach(b => {
+        const match = b.dataset.dh === currentDh.toUpperCase() &&
+                      b.dataset.dl === currentDl.toUpperCase();
+        b.classList.toggle('active', match);
+        if (match) b.classList.remove('pending');  // confirmed → solid highlight
+      });
+    }
+
+    // ── Reveal the manual entry card (Custom) ─────────────────
+    function openCustom() {
+      const card = document.getElementById('custom-card');
+      card.style.display = '';
+      resetForm();
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      document.getElementById('input-dl').focus();
     }
 
     function updateDisplay(dh, dl) {
@@ -382,9 +549,17 @@
         return;
       }
 
-      setStatus('loading', 'Applying…');
-      document.getElementById('btn-apply').disabled = true;
+      const ok = await applyAddress(dh, dl);
+      if (ok) highlightActive();
+    }
 
+    // ── Shared: POST an address to the server ─────────────────
+    // Used by both the preset buttons and the manual Apply button.
+    async function applyAddress(dh, dl) {
+      dh = dh.toUpperCase();
+      dl = dl.toUpperCase();
+      setStatus('loading', `Applying ${dh} ${dl}…`);
+      document.getElementById('btn-apply').disabled = true;
       try {
         const res = await fetch('/api/xbee/config', {
           method: 'POST',
@@ -397,9 +572,13 @@
         currentDh = data.dh;
         currentDl = data.dl;
         updateDisplay(data.dh, data.dl);
+        document.getElementById('input-dl').value = data.dl;
+        document.getElementById('input-dh').value = data.dh;
         setStatus('ok', `Applied → ${data.full}`);
+        return true;
       } catch (e) {
         setStatus('err', 'Error: ' + e.message);
+        return false;
       } finally {
         document.getElementById('btn-apply').disabled = false;
       }

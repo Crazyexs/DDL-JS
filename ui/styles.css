@@ -180,6 +180,20 @@ a { color: var(--accent); text-decoration: none; }
   border-color: color-mix(in oklab, var(--ok) 38%, var(--edge) 62%);
 }
 
+/* Active XBee target pill — links to /config */
+.pill.xbee {
+  text-decoration: none;
+  color: var(--fg);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.pill.xbee:hover { border-color: var(--accent); }
+.pill.xbee.custom {
+  background: color-mix(in oklab, var(--warn) 14%, white 86%);
+  color:      color-mix(in oklab, var(--warn) 72%, black 28%);
+  border-color: color-mix(in oklab, var(--warn) 40%, var(--edge) 60%);
+}
+
 /* ── TOP CLOCKS ───────────────────────────────────────────── */
 .top-clocks { display: flex; gap: 8px; }
 

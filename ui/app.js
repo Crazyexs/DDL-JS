@@ -22,6 +22,10 @@ if (!window.__DGS_BOOTED__) {
     // Gets a color from the CSS file
     const getCssVar = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
+    // Default map location — shown before any GPS fix arrives.
+    // 38°22'32.31"N 79°36'26.62"W
+    const DEFAULT_LOC = { lat: 38.375642, lon: -79.607394 };
+
     // ---------- STATE (Variables that change) ----------
     const st = {
       teamId: window.DGS_TEAM_ID || 1043,
@@ -95,6 +99,8 @@ if (!window.__DGS_BOOTED__) {
       missionBig: $("#missionTimeBig"),
       // Connection status pill
       connPill: $("#connPill"),
+      // Active XBee target pill
+      xbeePill: $("#xbeePill"),
       // Map & Mission controls
       btnStartMission: $("#btnStartMission"),
       mapEl: $("#map"),
@@ -369,7 +375,7 @@ if (!window.__DGS_BOOTED__) {
       // CanSat marker — floats at real GPS altitude (no ground clamping)
       st.cesiumMarker = viewer.entities.add({
         name: `CanSat #${st.teamId}`,
-        position: Cesium.Cartesian3.fromDegrees(98.985, 18.788, 0),
+        position: Cesium.Cartesian3.fromDegrees(DEFAULT_LOC.lon, DEFAULT_LOC.lat, 0),
         point: {
           pixelSize: 16,
           color: Cesium.Color.fromCssColorString('#4da3ff'),
@@ -460,7 +466,7 @@ if (!window.__DGS_BOOTED__) {
       viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
 
       viewer.camera.setView({
-        destination: Cesium.Cartesian3.fromDegrees(98.978, 18.781, 1200),
+        destination: Cesium.Cartesian3.fromDegrees(DEFAULT_LOC.lon, DEFAULT_LOC.lat, 1200),
         orientation: {
           heading: Cesium.Math.toRadians(0),
           pitch:   Cesium.Math.toRadians(-22),
@@ -476,13 +482,13 @@ if (!window.__DGS_BOOTED__) {
     function initLeaflet2D() {
       if (!el.mapEl) return;
       st.map = L.map('map', { zoomControl: true, attributionControl: false })
-        .setView([18.788, 98.985], 15);
+        .setView([DEFAULT_LOC.lat, DEFAULT_LOC.lon], 15);
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
       }).addTo(st.map);
 
-      st.marker = L.marker([18.788, 98.985]).addTo(st.map);
+      st.marker = L.marker([DEFAULT_LOC.lat, DEFAULT_LOC.lon]).addTo(st.map);
       if (el.mapToggle) el.mapToggle.textContent = '→ 3D';
     }
 
@@ -1242,6 +1248,7 @@ if (!window.__DGS_BOOTED__) {
             info(`KML auto-saved → ${data.file}`);
           } else if (data.type === 'xbee_addr') {
             info(`XBee address updated → ${data.full}`);
+            updateXbeePill(data.dh, data.dl);
           } else if (data.type === 'serial_status') {
             const lbl = document.getElementById('serialStatusLabel');
             if (data.connected) {
@@ -1319,15 +1326,15 @@ if (!window.__DGS_BOOTED__) {
 
     function initRecoveryMap() {
       if (st.recoveryMap) return;
-      st.recoveryMap = L.map('recoveryMap', { zoomControl: true, attributionControl: false }).setView([18.788, 98.985], 16);
+      st.recoveryMap = L.map('recoveryMap', { zoomControl: true, attributionControl: false }).setView([DEFAULT_LOC.lat, DEFAULT_LOC.lon], 16);
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
       }).addTo(st.recoveryMap);
 
-      st.recoveryMarker = L.marker([18.788, 98.985]).addTo(st.recoveryMap);
-      st.gcsMarker = L.circleMarker([18.788, 98.985], { radius: 8, color: '#4da3ff', fillColor: '#4da3ff', fillOpacity: 0.9, weight: 2 }).addTo(st.recoveryMap);
-      st.recoveryLine = L.polyline([[18.788, 98.985], [18.788, 98.985]], { color: 'red', weight: 4, dashArray: '10, 10' }).addTo(st.recoveryMap);
+      st.recoveryMarker = L.marker([DEFAULT_LOC.lat, DEFAULT_LOC.lon]).addTo(st.recoveryMap);
+      st.gcsMarker = L.circleMarker([DEFAULT_LOC.lat, DEFAULT_LOC.lon], { radius: 8, color: '#4da3ff', fillColor: '#4da3ff', fillOpacity: 0.9, weight: 2 }).addTo(st.recoveryMap);
+      st.recoveryLine = L.polyline([[DEFAULT_LOC.lat, DEFAULT_LOC.lon], [DEFAULT_LOC.lat, DEFAULT_LOC.lon]], { color: 'red', weight: 4, dashArray: '10, 10' }).addTo(st.recoveryMap);
     }
 
     el.btnFindPayload?.addEventListener('click', () => {
@@ -1513,6 +1520,36 @@ if (!window.__DGS_BOOTED__) {
       }
     }
 
+    // ---------- ACTIVE XBEE TARGET PILL ----------
+    let xbeePresets = [];   // [{slot, name, dh, dl}] mirrored from main.py XBEE_PRESETS
+
+    function updateXbeePill(dh, dl) {
+      if (!el.xbeePill) return;
+      const DH = (dh || '').toUpperCase();
+      const DL = (dl || '').toUpperCase();
+      const match = xbeePresets.find(p =>
+        (p.dh || '').toUpperCase() === DH && (p.dl || '').toUpperCase() === DL);
+      if (match) {
+        el.xbeePill.textContent = `XBee: ${match.slot}`;
+        el.xbeePill.classList.remove('custom');
+        el.xbeePill.title = `XBee #${match.slot} (${match.name || ''}) — ${DH} ${DL} · click to change`;
+      } else {
+        el.xbeePill.textContent = 'XBee: Custom';
+        el.xbeePill.classList.add('custom');
+        el.xbeePill.title = `Custom address — ${DH} ${DL} · click to change`;
+      }
+    }
+
+    async function syncXbeePill() {
+      try {
+        const res = await fetch('/api/xbee/config');
+        if (!res.ok) return;
+        const data = await res.json();
+        xbeePresets = data.presets || [];
+        updateXbeePill(data.dh, data.dl);
+      } catch (_) {}
+    }
+
     async function syncLogLabel() {
       try {
         const res = await fetch('/api/log/current');
@@ -1592,6 +1629,7 @@ if (!window.__DGS_BOOTED__) {
       initTheme();
       initSun();
       syncLogLabel();
+      syncXbeePill();
       initSerialSelector();
 
       // Announce startup health
