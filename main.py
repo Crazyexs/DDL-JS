@@ -50,6 +50,17 @@ DEFAULT_XBEE_DL = "41F77466"
 GPS_PORT = "/dev/ttyACM0"
 GPS_BAUD = 9600
 
+# ---- Preset XBee units (Quick Select buttons 1-3 in /config) ----
+# Edit these to match your physical XBee modules. The /config page shows one
+# button per preset; pressing it applies that address instantly (no typing).
+# DH is 0013A200 for all same-model XBee PRO 900HP — only DL differs per unit.
+# Read DL off each module's label or via ATSL in XCTU, then paste it here.
+XBEE_PRESETS = [
+    {"slot": 1, "name": "Unit 1",  "dh": "0013A200", "dl": "41F77466"},
+    {"slot": 2, "name": "Unit 2",  "dh": "0013A200", "dl": "41071708"},  # TODO: set real DL
+    {"slot": 3, "name": "Unit 3",  "dh": "0013A200", "dl": "41E15A39"},  # TODO: set real DL
+]
+
 # Setting this to True means this Python program handles the connection to the radio.
 # If False, the web browser tries to handle it directly (not recommended here).
 USE_SERVER_SERIAL = True
@@ -1611,6 +1622,7 @@ async def api_xbee_get():
         "dl": state.xbee_dl,
         "full": state.xbee_dh + state.xbee_dl,
         "default_dh": DEFAULT_XBEE_DH,
+        "presets": XBEE_PRESETS,
     }
 
 @app.post("/api/xbee/config")
