@@ -517,11 +517,12 @@ if (!window.__DGS_BOOTED__) {
       if (el.mapToggle) el.mapToggle.textContent = '→ 3D';
     }
 
-    // ── Raspberry Pi: always 2D Leaflet only (no Cesium/3D) ─────────────
+    // Start in 3D Cesium (same as main branch); the Map Toggle button switches
+    // to 2D Leaflet. All 3D/2D update paths are null-guarded, so either mode works.
     function initMap() {
       if (!el.mapEl) return;
-      initLeaflet2D();
-      if (el.mapToggle) el.mapToggle.style.display = 'none'; // Pi has no 3D
+      initCesium3D();
+      el.mapToggle?.addEventListener('click', toggleMap);
     }
 
     // ── Toggle between 3D Cesium and 2D Leaflet ──────────────────────
