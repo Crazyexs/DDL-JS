@@ -219,6 +219,7 @@ class GSState:
     rssi_dbm: Optional[int] = None          # Last-hop RSSI from ATDB (negative dBm)
     xbee_dh: str = DEFAULT_XBEE_DH         # Current XBee destination high (8 hex chars)
     xbee_dl: str = DEFAULT_XBEE_DL         # Current XBee destination low  (8 hex chars)
+    last_tx_status: Optional[int] = None    # Last uplink delivery status (0x00 = delivered)
     kml_landed_saved: bool = False          # True after final KML save on LANDED state
 
 state = GSState()
@@ -611,6 +612,13 @@ def _read_api2_frame(ser: serial.Serial) -> Optional[dict]:
             rssi_dbm = -body[5]         # XBee reports magnitude; negate for dBm
             return {"type": "rssi", "dbm": rssi_dbm}
 
+    # 0x8B = Transmit Status — tells us whether an uplink actually reached the CanSat.
+    # DigiMesh layout: frame_type(1) + frame_id(1) + 16-bit dest(2) + tx_retries(1)
+    #                  + delivery_status(1) + discovery_status(1) = 7 bytes.
+    # delivery_status 0x00 == delivered; anything else == not delivered (no ACK, no route…).
+    if frame_type == 0x8B and length >= 7:
+        return {"type": "tx_status", "delivery": body[5], "retries": body[4]}
+
     return None
 
 
@@ -798,6 +806,16 @@ def serial_read_thread_target(loop):
                 elif frame["type"] == "rssi":
                     state.rssi_dbm = frame["dbm"]
                     _thread_broadcast({"type": "rssi", "dbm": frame["dbm"]}, loop)
+
+                elif frame["type"] == "tx_status":
+                    # Delivery receipt for the last uplink command (0x00 = delivered).
+                    state.last_tx_status = frame["delivery"]
+                    _thread_broadcast({
+                        "type": "tx_status",
+                        "delivery": frame["delivery"],
+                        "ok": frame["delivery"] == 0,
+                        "retries": frame["retries"],
+                    }, loop)
             else:
                 # Port object missing or closed — clean up and reconnect.
                 _close_serial()
@@ -1106,6 +1124,7 @@ async def lifespan(app: FastAPI):
     """
     # Startup logic
     log_json(event="startup", team=TEAM_ID, server_serial=USE_SERVER_SERIAL)
+    _load_xbee_addr()   # restore the last-selected XBee address (survives restart)
     _select_serial_port_at_startup()
     ensure_csv_header()
 
@@ -1476,6 +1495,36 @@ async def ws_telemetry(ws: WebSocket):
 
 
 # ---- XBee address config ----
+# The active address is persisted here so it survives a restart/reboot. Without
+# this, a crash or `gcs restart` silently reverts to the default unit and
+# commands would go to the wrong CanSat.
+XBEE_STATE_FILE = DATA_DIR / "xbee_addr.json"
+
+def _save_xbee_addr():
+    """Persist the current XBee destination address to disk."""
+    try:
+        XBEE_STATE_FILE.write_text(json.dumps({"dh": state.xbee_dh, "dl": state.xbee_dl}))
+    except Exception as e:
+        log_json(level="error", event="xbee_save_failed", error=str(e))
+
+def _load_xbee_addr():
+    """Restore the saved XBee address on startup. Ignores a missing/corrupt file."""
+    try:
+        if not XBEE_STATE_FILE.exists():
+            return
+        d = json.loads(XBEE_STATE_FILE.read_text())
+        dh = str(d.get("dh", "")).strip().upper()
+        dl = str(d.get("dl", "")).strip().upper()
+        # Validate before trusting the file — keep defaults if it's garbage.
+        for v in (dh, dl):
+            if len(v) != 8:
+                raise ValueError("address field not 8 hex chars")
+            bytes.fromhex(v)
+        state.xbee_dh, state.xbee_dl = dh, dl
+        log_json(event="xbee_addr_restored", dh=dh, dl=dl)
+    except Exception as e:
+        log_json(level="warn", event="xbee_load_failed", error=str(e))
+
 def _validate_hex_field(val: str, label: str) -> str:
     """Validate and normalise an 8-char hex address field."""
     v = val.strip().upper().replace(" ", "")
@@ -1511,6 +1560,7 @@ async def api_xbee_set(body: XBeeCfg):
     old = state.xbee_dh + state.xbee_dl
     state.xbee_dh = dh
     state.xbee_dl = dl
+    _save_xbee_addr()   # persist so it survives a restart
     log_json(event="xbee_addr_changed", old=old, new=dh + dl)
     await broadcast_ws({"type": "xbee_addr", "dh": dh, "dl": dl, "full": dh + dl})
     return {"ok": True, "dh": dh, "dl": dl, "full": dh + dl}

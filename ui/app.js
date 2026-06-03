@@ -1249,6 +1249,18 @@ if (!window.__DGS_BOOTED__) {
           } else if (data.type === 'xbee_addr') {
             info(`XBee address updated → ${data.full}`);
             updateXbeePill(data.dh, data.dl);
+          } else if (data.type === 'tx_status') {
+            // Delivery receipt for the last uplink. Failures are always shown;
+            // successes are throttled so 1 Hz SIM uplinks don't flood the log.
+            if (data.ok) {
+              const now = Date.now();
+              if (now - (st._lastTxOkToast || 0) > 3000) {
+                st._lastTxOkToast = now;
+                info(`✓ Uplink delivered to CanSat`);
+              }
+            } else {
+              warn(`⚠ Uplink NOT delivered — XBee status 0x${(data.delivery || 0).toString(16).toUpperCase().padStart(2, '0')} (check address / link)`);
+            }
           } else if (data.type === 'serial_status') {
             const lbl = document.getElementById('serialStatusLabel');
             if (data.connected) {
