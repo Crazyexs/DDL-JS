@@ -519,9 +519,16 @@ if (!window.__DGS_BOOTED__) {
 
     // Start in 3D Cesium (same as main branch); the Map Toggle button switches
     // to 2D Leaflet. All 3D/2D update paths are null-guarded, so either mode works.
+    // A map failure (Cesium/WebGL unavailable) must NEVER abort startup — the
+    // command uplink and telemetry are wired separately. Fall back to 2D Leaflet.
     function initMap() {
       if (!el.mapEl) return;
-      initCesium3D();
+      try {
+        initCesium3D();
+      } catch (e) {
+        warn('3D map failed to load — falling back to 2D: ' + (e?.message || e));
+        try { el.mapEl.innerHTML = ''; initLeaflet2D(); } catch (_) {}
+      }
       el.mapToggle?.addEventListener('click', toggleMap);
     }
 
@@ -1656,13 +1663,15 @@ if (!window.__DGS_BOOTED__) {
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js').catch(() => {});
       }
-      initMap();
+      // Wire mission-critical comms FIRST so nothing below (a map/UI error) can
+      // ever block command uplink or telemetry.
       fillCmds();
+      initSerialSelector();
       initTheme();
       initSun();
       syncLogLabel();
       syncXbeePill();
-      initSerialSelector();
+      initMap();   // map last, and itself fail-safe (falls back to 2D)
 
       // Announce startup health
       const setupSpeech = async () => {
