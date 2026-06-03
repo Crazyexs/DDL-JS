@@ -341,7 +341,7 @@
         DL — Destination Low
         <span class="badge badge-default">Primary</span>
       </label>
-      <input type="text" id="input-dl" maxlength="8" placeholder="41F77466" spellcheck="false" />
+      <input type="text" id="input-dl" maxlength="11" placeholder="41F77466" spellcheck="false" />
       <div class="hint">8 hex characters · unique per XBee unit (from ATSL in XCTU)</div>
     </div>
 
@@ -357,7 +357,7 @@
         DH — Destination High
         <span class="badge badge-emergency">Emergency override</span>
       </label>
-      <input type="text" id="input-dh" maxlength="8" placeholder="0013A200"
+      <input type="text" id="input-dh" maxlength="11" placeholder="0013A200"
              spellcheck="false" disabled />
       <div class="hint">Default 0013A200 for all same-model XBee PRO 900HP · change only if different hardware</div>
     </div>
@@ -518,16 +518,27 @@
 
     // ── Validation ────────────────────────────────────────────
     const HEX8 = /^[0-9A-Fa-f]{8}$/;
+    // Normalise exactly like the backend: strip ALL whitespace + uppercase.
+    // Keeps the browser's check consistent with the server (which strips spaces),
+    // so a pasted address like "0013 A200" is accepted in both places.
+    const normHex = (s) => String(s).replace(/\s+/g, '').toUpperCase();
 
     function validateInput(inp) {
-      const ok = HEX8.test(inp.value.trim());
-      inp.classList.toggle('input-ok', ok && inp.value.trim() !== '');
-      inp.classList.toggle('input-err', !ok && inp.value.trim() !== '');
+      const v = normHex(inp.value);
+      const ok = HEX8.test(v);
+      inp.classList.toggle('input-ok', ok && v !== '');
+      inp.classList.toggle('input-err', !ok && v !== '');
       return ok;
     }
 
-    document.getElementById('input-dl').addEventListener('input', function () { validateInput(this); });
-    document.getElementById('input-dh').addEventListener('input', function () { validateInput(this); });
+    // Strip whitespace live so the field always holds a clean address.
+    function cleanOnInput() {
+      const cleaned = this.value.replace(/\s+/g, '');
+      if (cleaned !== this.value) this.value = cleaned;
+      validateInput(this);
+    }
+    document.getElementById('input-dl').addEventListener('input', cleanOnInput);
+    document.getElementById('input-dh').addEventListener('input', cleanOnInput);
 
     // ── Apply ─────────────────────────────────────────────────
     async function applyConfig() {
@@ -535,8 +546,8 @@
       const dhInp = document.getElementById('input-dh');
       const dhOverride = document.getElementById('toggle-dh').checked;
 
-      const dl = dlInp.value.trim().toUpperCase();
-      const dh = dhOverride ? dhInp.value.trim().toUpperCase() : defaultDh;
+      const dl = normHex(dlInp.value);
+      const dh = dhOverride ? normHex(dhInp.value) : defaultDh;
 
       if (!HEX8.test(dl)) {
         setStatus('err', 'DL must be exactly 8 hex characters');

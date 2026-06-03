@@ -62,8 +62,8 @@ GPS_BAUD = 9600
 # Read DL off each module's label or via ATSL in XCTU, then paste it here.
 XBEE_PRESETS = [
     {"slot": 1, "name": "Unit 1",  "dh": "0013A200", "dl": "41F77466"},
-    {"slot": 2, "name": "Unit 2",  "dh": "0013A200", "dl": "41071708"},  # TODO: set real DL
-    {"slot": 3, "name": "Unit 3",  "dh": "0013A200", "dl": "41E15A39"},  # TODO: set real DL
+    {"slot": 2, "name": "Unit 2",  "dh": "0013A200", "dl": "41071708"},
+    {"slot": 3, "name": "Unit 3",  "dh": "0013A200", "dl": "41E15A39"},
 ]
 
 # Setting this to True means this Python program handles the connection to the radio.
@@ -684,6 +684,11 @@ def _build_api2_tx_frame(payload: bytes) -> bytes:
     # Safety: never broadcast. Always send to the single unit set in /config.
     if dest_hex == XBEE_BROADCAST_ADDR:
         raise ValueError("refusing to transmit to the XBee broadcast address — pick a specific unit in /config")
+    # Defensive: the destination must be a clean 64-bit (16 hex char) address.
+    # Today the state is only ever set via the validated POST or defaults, but this
+    # guarantees a malformed address can never reach the radio as a short/garbled frame.
+    if len(dest_hex) != 16 or any(ch not in "0123456789ABCDEF" for ch in dest_hex):
+        raise ValueError(f"invalid XBee destination address: {dest_hex!r}")
 
     content = bytearray([0x10, 0x01])   # frame type: TX Request, frame ID: 1
     content += bytes.fromhex(dest_hex)  # 64-bit destination (8 bytes) — the /config unit only
@@ -1256,6 +1261,7 @@ async def lifespan(app: FastAPI):
     """
     # Startup logic
     log_json(event="startup", team=TEAM_ID, server_serial=USE_SERVER_SERIAL)
+    _validate_presets()  # warn early if a preset address was mis-edited
     _load_xbee_addr()   # restore the last-selected XBee address (survives restart)
     _select_serial_port_at_startup()
     ensure_csv_header()
@@ -1634,6 +1640,19 @@ async def ws_telemetry(ws: WebSocket):
         log_json(event="ws_disconnected", client=c_info)
 
 # ---- XBee config endpoints ----
+def _is_hex8(v: str) -> bool:
+    """True if v is exactly 8 hex characters."""
+    v = str(v).strip().upper()
+    return len(v) == 8 and all(ch in "0123456789ABCDEF" for ch in v)
+
+def _validate_presets():
+    """Sanity-check XBEE_PRESETS at startup so a hand-edit typo is caught early,
+    not silently when a Quick Select button is pressed mid-mission."""
+    for p in XBEE_PRESETS:
+        if not (_is_hex8(p.get("dh", "")) and _is_hex8(p.get("dl", ""))):
+            log_json(level="warn", event="bad_xbee_preset",
+                     slot=p.get("slot"), dh=p.get("dh"), dl=p.get("dl"))
+
 # The active address is persisted here so it survives a restart/reboot. Without
 # this, a crash or `gcs restart` silently reverts to the default unit and
 # commands would go to the wrong CanSat.
