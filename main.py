@@ -46,6 +46,11 @@ DEFAULT_BAUD = 115200
 DEFAULT_XBEE_DH = "0013A200"
 DEFAULT_XBEE_DL = "41F77466"
 
+# The XBee 64-bit broadcast address. We refuse to ever transmit to it so a
+# command always goes to exactly the one unit selected in /config — never to
+# every radio in range at once.
+XBEE_BROADCAST_ADDR = "000000000000FFFF"
+
 # USB GPS module (VK-172 u-blox 7) port and baud rate
 GPS_PORT = "/dev/ttyACM0"
 GPS_BAUD = 9600
@@ -675,8 +680,13 @@ def _build_api2_tx_frame(payload: bytes) -> bytes:
     Build an API Mode 2 Transmit Request (0x10) frame addressed to PAYLOAD_XBEE_ADDR.
     Escapes 0x7E, 0x7D, 0x11, 0x13 everywhere except the leading start delimiter.
     """
+    dest_hex = (state.xbee_dh + state.xbee_dl).upper()
+    # Safety: never broadcast. Always send to the single unit set in /config.
+    if dest_hex == XBEE_BROADCAST_ADDR:
+        raise ValueError("refusing to transmit to the XBee broadcast address — pick a specific unit in /config")
+
     content = bytearray([0x10, 0x01])   # frame type: TX Request, frame ID: 1
-    content += bytes.fromhex(state.xbee_dh + state.xbee_dl)  # 64-bit destination (8 bytes)
+    content += bytes.fromhex(dest_hex)  # 64-bit destination (8 bytes) — the /config unit only
     content += b'\xFF\xFE'             # 16-bit dest = unknown/let stack decide
     content += b'\x00'                 # broadcast radius = 0
     content += b'\xC0'                 # options = 0xC0 (DigiMesh)
@@ -1678,6 +1688,9 @@ async def api_xbee_get():
 async def api_xbee_set(body: XBeeCfg):
     dh = _validate_hex_field(body.dh, "dh")
     dl = _validate_hex_field(body.dl, "dl")
+    # Reject the broadcast address — commands must target one specific unit.
+    if (dh + dl) == XBEE_BROADCAST_ADDR:
+        raise HTTPException(400, detail="broadcast address (…FFFF) not allowed — choose a specific unit")
     old = state.xbee_dh + state.xbee_dl
     state.xbee_dh = dh
     state.xbee_dl = dl
