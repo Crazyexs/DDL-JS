@@ -1105,6 +1105,10 @@ if (!window.__DGS_BOOTED__) {
     const QUICK_COMMANDS = [
       // Telemetry
       'CX,ON', 'CX,OFF',
+      // Arming (required before launch detection)
+      'ARM', 'DISARM',
+      // Camera trigger
+      'CAM,ON', 'CAM,OFF',
       // State Overrides
       'STATE,IDLE_SAFE', 'STATE,LAUNCH_PAD', 'STATE,ASCENT', 'STATE,APOGEE',
       'STATE,DESCENT', 'STATE,PROBE_RELEASE', 'STATE,PAYLOAD_RELEASE', 'STATE,LANDED',
@@ -1117,7 +1121,12 @@ if (!window.__DGS_BOOTED__) {
       // Mechanical \u2014 Instrument bay servo
       'MEC,INS,ON', 'MEC,INS,OFF',
       // Mechanical \u2014 Parachute spin motor
-      'MEC,PAR,CW', 'MEC,PAR,ACW', 'MEC,PAR,OFF',
+      'MEC,PAR,CW', 'MEC,PAR,ACW', 'MEC,PAR,OFF', 'MEC,PAR,ZERO',
+      // Guidance / control loop
+      'KF,ON', 'KF,OFF', 'CTRL,ON', 'CTRL,OFF',
+      'SET,CTRL_PROT,ON', 'SET,CTRL_PROT,OFF',
+      // Power / persistence (SLEEP & RESET only act in LAUNCH_PAD)
+      'SLEEP', 'EEPROM,READ',
       // Log switching (local GCS only \u2014 not sent to satellite)
       '/log.clear',
     ];
@@ -1133,8 +1142,14 @@ if (!window.__DGS_BOOTED__) {
       { prefix: 'SET,INS_NEAR,',   label: 'SET,INS_NEAR,<val>',      hint: 'Enter instrument near threshold (m):' },
       { prefix: 'SET,INS_CRIT,',   label: 'SET,INS_CRIT,<val>',      hint: 'Enter instrument critical threshold (m):' },
       { prefix: 'CAL,TOF,',        label: 'CAL,TOF,<dist_mm>',       hint: 'Enter VL53L1X calibration distance (mm):' },
-      { prefix: 'SERVO,A,',        label: 'SERVO,A,<0-180>',          hint: 'Enter servo A angle (0\u2013180):' },
+      { prefix: 'SERVO,A,',        label: 'SERVO,A,<0-100>',          hint: 'Enter servo A (0\u2013100, scales to 0\u2013180\u00b0):' },
       { prefix: 'SERVO,B,',        label: 'SERVO,B,<0-180>',          hint: 'Enter servo B angle (0\u2013180):' },
+      // Guidance target & tuning
+      { prefix: 'TARGET,',         label: 'TARGET,<lat>,<lon>',       hint: 'Enter target as lat,lon (e.g. 13.7233,100.5158):' },
+      { prefix: 'SET,BARO_SRC,',   label: 'SET,BARO_SRC,<0-2>',       hint: 'Altimeter source: 0=BMP581, 1=MS5611, 2=average:' },
+      { prefix: 'SET,AT,',         label: 'SET,AT,<0-1>',             hint: 'Bearing EMA alpha (0\u20131):' },
+      { prefix: 'SET,AT_CTRL,',    label: 'SET,AT_CTRL,<0-1>',        hint: 'Control EMA alpha (0\u20131):' },
+      { prefix: 'SET,HDBAND,',     label: 'SET,HDBAND,<deg>',         hint: 'Heading deadband (degrees):' },
     ];
 
     // Populates the dropdown menu

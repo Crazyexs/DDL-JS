@@ -291,6 +291,21 @@
     </div>
   </div>
 
+  <!-- ARM / CAMERA -->
+  <div class="card" id="card-arm">
+    <div class="card-title">Arming &amp; Camera</div>
+    <div class="card-body col">
+      <div class="pair">
+        <button class="btn warn" onclick="sendConfirm('ARM','Send ARM to satellite? Launch detection becomes active.')">ARM</button>
+        <button class="btn off"  onclick="send('DISARM')">DISARM</button>
+      </div>
+      <div class="pair">
+        <button class="btn on"  onclick="send('CAM,ON')">CAM ON</button>
+        <button class="btn off" onclick="send('CAM,OFF')">CAM OFF</button>
+      </div>
+    </div>
+  </div>
+
   <!-- SIM -->
   <div class="card" id="card-sim">
     <div class="card-title">Simulation</div>
@@ -347,6 +362,7 @@
           <button class="btn blue"   onclick="send('MEC,PAR,CW')">PAR CW</button>
           <button class="btn purple" onclick="send('MEC,PAR,ACW')">PAR ACW</button>
           <button class="btn off"    onclick="send('MEC,PAR,OFF')">PAR OFF</button>
+          <button class="btn ghost"  onclick="send('MEC,PAR,ZERO')">PAR ZERO</button>
         </div>
       </div>
     </div>
@@ -363,6 +379,8 @@
         <button class="btn ghost" onclick="send('CAL,NORTH')">CAL NORTH</button>
         <button class="btn ghost" onclick="send('CAL,MAG,STATUS')">MAG STATUS</button>
         <button class="btn dim"   onclick="send('CAL,MAG,RESET')">MAG RESET</button>
+        <button class="btn off"   onclick="sendConfirm('SLEEP','Send SLEEP? (only acts on LAUNCH_PAD — deep-sleeps the payload)')">SLEEP</button>
+        <button class="btn dim"   onclick="send('EEPROM,READ')">EEPROM READ</button>
         <button class="btn ghost" style="grid-column:span 3" onclick="sendPrompt('CAL,TOF,','Enter VL53L1X calibration distance (mm):')">CAL,TOF,&lt;dist_mm&gt;</button>
       </div>
     </div>
@@ -417,12 +435,36 @@
     </div>
   </div>
 
+  <!-- GUIDANCE & CONTROL -->
+  <div class="card" id="card-guid">
+    <div class="card-title">Guidance &amp; Control</div>
+    <div class="card-body col">
+      <div class="pair">
+        <button class="btn on"   onclick="send('CTRL,ON')">CTRL ON</button>
+        <button class="btn off"  onclick="send('CTRL,OFF')">CTRL OFF</button>
+        <button class="btn blue" onclick="send('KF,ON')">KF ON</button>
+        <button class="btn dim"  onclick="send('KF,OFF')">KF OFF</button>
+      </div>
+      <div class="pair">
+        <button class="btn warn" onclick="send('SET,CTRL_PROT,ON')">PROT ON</button>
+        <button class="btn off"  onclick="send('SET,CTRL_PROT,OFF')">PROT OFF</button>
+      </div>
+      <div class="set-grid">
+        <button class="btn ghost" onclick="sendPrompt('TARGET,',     'Target as lat,lon (e.g. 13.7233,100.5158):')">TARGET</button>
+        <button class="btn ghost" onclick="sendPrompt('SET,BARO_SRC,','Altimeter source 0=BMP581 1=MS5611 2=avg:')">BARO SRC</button>
+        <button class="btn ghost" onclick="sendPrompt('SET,AT,',      'Bearing EMA alpha (0–1):')">AT</button>
+        <button class="btn ghost" onclick="sendPrompt('SET,AT_CTRL,', 'Control EMA alpha (0–1):')">AT CTRL</button>
+        <button class="btn ghost" onclick="sendPrompt('SET,HDBAND,',  'Heading deadband (degrees):')">HDBAND</button>
+      </div>
+    </div>
+  </div>
+
   <!-- SERVO -->
   <div class="card" id="card-srv">
     <div class="card-title">Servo</div>
     <div class="card-body col">
       <div class="pair">
-        <button class="btn purple" onclick="sendPrompt('SERVO,A,','Servo A angle (0–180°):')">SERVO A</button>
+        <button class="btn purple" onclick="sendPrompt('SERVO,A,','Servo A (0–100, scales to 0–180°):')">SERVO A</button>
         <button class="btn purple" onclick="sendPrompt('SERVO,B,','Servo B angle (0–180°):')">SERVO B</button>
       </div>
     </div>
