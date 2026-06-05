@@ -1109,9 +1109,8 @@ if (!window.__DGS_BOOTED__) {
       'ARM', 'DISARM',
       // Camera trigger
       'CAM,ON', 'CAM,OFF',
-      // State Overrides
-      'STATE,IDLE_SAFE', 'STATE,LAUNCH_PAD', 'STATE,ASCENT', 'STATE,APOGEE',
-      'STATE,DESCENT', 'STATE,PROBE_RELEASE', 'STATE,PAYLOAD_RELEASE', 'STATE,LANDED',
+      // NOTE: STATE,* overrides intentionally removed — too risky to expose as a
+      // one-click button during competition. Type one manually if needed for bench tests.
       // Calibration & Reset
       'CAL', 'RESET', 'CAL,MAG,START', 'CAL,NORTH', 'CAL,MAG,STATUS', 'CAL,MAG,RESET',
       // Simulation
