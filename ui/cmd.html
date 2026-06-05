@@ -321,22 +321,10 @@
     </div>
   </div>
 
-  <!-- STATE -->
-  <div class="card" id="card-state">
-    <div class="card-title">State Override</div>
-    <div class="card-body">
-      <div class="state-grid">
-        <button class="btn blue"  onclick="send('STATE,IDLE_SAFE')">IDLE SAFE</button>
-        <button class="btn blue"  onclick="send('STATE,LAUNCH_PAD')">LAUNCH PAD</button>
-        <button class="btn blue"  onclick="send('STATE,ASCENT')">ASCENT</button>
-        <button class="btn warn"  onclick="send('STATE,APOGEE')">APOGEE</button>
-        <button class="btn warn"  onclick="send('STATE,DESCENT')">DESCENT</button>
-        <button class="btn warn"  onclick="send('STATE,PROBE_RELEASE')">PROBE REL.</button>
-        <button class="btn warn"  onclick="send('STATE,PAYLOAD_RELEASE')">PAYLOAD REL.</button>
-        <button class="btn ghost" onclick="send('STATE,LANDED')">LANDED</button>
-      </div>
-    </div>
-  </div>
+  <!-- STATE override buttons intentionally removed for competition safety.
+       Forcing a flight state by accident (e.g. PAYLOAD_RELEASE) could fire a
+       deployment in error. Use the Manual Command box to type STATE,<x> only
+       for deliberate bench testing. -->
 
   <!-- MECH -->
   <div class="card" id="card-mech">
