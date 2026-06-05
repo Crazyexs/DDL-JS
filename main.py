@@ -44,7 +44,7 @@ DEFAULT_BAUD = 115200
 # DH is always 0013A200 for same-model modules; DL is the unique part.
 # Changed at runtime via POST /api/xbee/config — no restart needed.
 DEFAULT_XBEE_DH = "0013A200"
-DEFAULT_XBEE_DL = "41F77466"
+DEFAULT_XBEE_DL = "428945CD"
 
 # The XBee 64-bit broadcast address. We refuse to ever transmit to it so a
 # command always goes to exactly the one unit selected in /config — never to
@@ -61,8 +61,8 @@ GPS_BAUD = 9600
 # DH is 0013A200 for all same-model XBee PRO 900HP — only DL differs per unit.
 # Read DL off each module's label or via ATSL in XCTU, then paste it here.
 XBEE_PRESETS = [
-    {"slot": 1, "name": "Unit 1",  "dh": "0013A200", "dl": "41F77466"},
-    {"slot": 2, "name": "Unit 2",  "dh": "0013A200", "dl": "41071708"},
+    {"slot": 1, "name": "Unit 1",  "dh": "0013A200", "dl": "428945CD"},
+    {"slot": 2, "name": "Unit 2",  "dh": "0013A200", "dl": "42894268"},
     {"slot": 3, "name": "Unit 3",  "dh": "0013A200", "dl": "41E15A39"},
 ]
 
