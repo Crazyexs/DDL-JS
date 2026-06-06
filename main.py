@@ -82,7 +82,7 @@ UI_DIR.mkdir(parents=True, exist_ok=True)
 
 # This is the name of the CSV file where we save flight data.
 # It looks like: Flight_1043.csv
-CSV_CURRENT = DATA_DIR / f"Flight_{TEAM_ID:04}.csv"
+CSV_CURRENT = DATA_DIR / f"Flight_{TEAM_ID:04}_.csv"
 
 # Only 115200 is supported — XBee 900HP default for this mission.
 BAUD_PRESETS = [115200]
